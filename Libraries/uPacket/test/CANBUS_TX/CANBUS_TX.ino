@@ -24,7 +24,7 @@ static CAN_message_t CAN_msg;
 void canSend(){
 
   //Start shifting bits (b0 = LSB)
-  uint8_t b0 = 0x12;
+  uint8_t b0 = 0x12; // 0b000100010  //0b01001000
   uint8_t b1 = 0x34;
   uint8_t b2 = 0x56;
   uint8_t b3 = 0x78;
