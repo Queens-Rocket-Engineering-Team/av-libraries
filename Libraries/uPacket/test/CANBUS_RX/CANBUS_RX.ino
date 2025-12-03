@@ -7,8 +7,8 @@
 #include <cstring>
 #define CAN_RX_PIN PB8
 #define CAN_TX_PIN PB9
-#define USB_RX_PIN PB10 
-#define USB_TX_PIN PB11 
+#define USB_RX_PIN PA10 // for GPS board
+#define USB_TX_PIN PA9 // for GPS board
 #define DB_LED_PIN PA15
 
 #define USB_BAUD 9600
@@ -17,7 +17,7 @@
 // FUCK hardware serial periperhals we doin SOFTWARE
 SoftwareSerial usb(USB_RX_PIN, USB_TX_PIN); 
 // CANBUS trash wahooo
-STM32_CAN canb( CAN1, ALT );    //CAN1 ALT is PB8+PB9
+STM32_CAN canb(CAN1,ALT);    //CAN1 ALT is PB8+PB9
 
 
 
@@ -26,18 +26,23 @@ void setup() {
   // setup canubs
   canb.begin(); //automatic retransmission can be done using arg "true"
   canb.setBaudRate(62500); //62.5kbps
+  canb.setMBFilterProcessing(MB0, 0x008, 0x008); // 000 0111 1000 //000 1001 0 000
   // setup usb serial
   usb.begin(USB_BAUD);
 
   pinMode(DB_LED_PIN, OUTPUT);
+
+
 }//setup()
 
 void loop() {
   // put your main code here, to run repeatedly:
   CAN_message_t CAN_msg1;
+  //usb.println("I'm alive RX");
   while(canb.read(CAN_msg1)){
     AIM_packet AIM_pkt2;
     unpackAimPkt(CAN_msg1, AIM_pkt2);
+    usb.println("=========================");
 
     usb.print("AIM origin2: 0x");
     usb.println(AIM_pkt2.origin, HEX);

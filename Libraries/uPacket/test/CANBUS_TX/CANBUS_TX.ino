@@ -7,8 +7,8 @@
 #include <cstring>
 #define CAN_RX_PIN PB8
 #define CAN_TX_PIN PB9
-#define USB_RX_PIN PB10 // NOT CONNECTED
-#define USB_TX_PIN PB11 // NOT CONNECTED
+#define USB_RX_PIN PB10 // For com board
+#define USB_TX_PIN PB11 // For com board
 #define DB_LED_PIN PA15
 
 
@@ -44,8 +44,9 @@ void setup() {
 }//setup()
 
 void loop() {
+  AIM_pkt.dest = 0x2;
   // put your main code here, to run repeatedly:
-  usb.println("Sending CAN packet");
+  usb.println("Sending CAN packet1::::::::::::::::");
   // sendPacket();
   usb.print("AIM origin: 0x");
   usb.println(AIM_pkt.origin, HEX);
@@ -71,10 +72,24 @@ void loop() {
   usb.println(AIM_pkt2.AIM_data.data, HEX);
   usb.print("AIM mili2: 0x");
   usb.println(AIM_pkt2.AIM_data.dayMilis, HEX);
-
- 
   */
-  delay(1000);
+  // sending seperate packet to test CAN filter
   digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
   canb.write(can_msg1);
+  delay(1000);
+
+  AIM_pkt.dest = 0x3;
+  usb.println("Sending CAN packet2::::::::::::::::");
+  usb.print("AIM origin: 0x");
+  usb.println(AIM_pkt.origin, HEX);
+  usb.print("AIM dest: 0x");
+  usb.println(AIM_pkt.dest, HEX);
+  usb.print("AIM data: 0x");
+  usb.println(AIM_pkt.AIM_data.data, HEX);
+  usb.print("AIM mili: 0x");
+  usb.println(AIM_pkt.AIM_data.dayMilis, HEX);
+  packAimPkt(AIM_pkt, can_msg1);
+  canb.write(can_msg1);
+  delay(1000);
+  
 }//loop()
