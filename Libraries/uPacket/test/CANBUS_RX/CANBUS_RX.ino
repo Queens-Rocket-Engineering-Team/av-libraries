@@ -1,22 +1,23 @@
-// haha oh SHIT (receiver edition)
+// Canbus Receiver
 
 #include "STM32_CAN.h"
 #include <SoftwareSerial.h>
-
+#include "CAN_PACKET.h"
+#include <cstdint>
+#include <cstring>
 #define CAN_RX_PIN PB8
 #define CAN_TX_PIN PB9
-#define USB_RX_PIN PB10 // fixed
-#define USB_TX_PIN PB11 // fixed
+#define USB_RX_PIN PB10 
+#define USB_TX_PIN PB11 
 #define DB_LED_PIN PA15
 
-#define USB_BAUD 9600 // FUCK IT 9600 BOYSSS
+#define USB_BAUD 9600
 
 
 // FUCK hardware serial periperhals we doin SOFTWARE
 SoftwareSerial usb(USB_RX_PIN, USB_TX_PIN); 
 // CANBUS trash wahooo
 STM32_CAN canb( CAN1, ALT );    //CAN1 ALT is PB8+PB9
-static CAN_message_t CAN_msg ;
 
 
 
@@ -33,14 +34,33 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  while (canb.read(CAN_msg)) {
-    usb.print(F("CAN ID = "));
-    usb.println(CAN_msg.id, BIN);
-    usb.print("CAN PAYLOAD = ");
-    usb.print(CAN_msg.buf[0], HEX);
-    usb.print(CAN_msg.buf[1], HEX);
-    usb.print(CAN_msg.buf[2], HEX);
-    usb.print(CAN_msg.buf[3], HEX);
+  CAN_message_t CAN_msg1;
+  while(canb.read(CAN_msg1)){
+    AIM_packet AIM_pkt2;
+    unpackAimPkt(CAN_msg1, AIM_pkt2);
+
+    usb.print("AIM origin2: 0x");
+    usb.println(AIM_pkt2.origin, HEX);
+    usb.print("AIM dest2: 0x");
+    usb.println(AIM_pkt2.dest, HEX);
+    usb.print("AIM data2: 0x");
+    usb.println(AIM_pkt2.AIM_data.data, HEX);
+    usb.print("AIM mili2: 0x");
+    usb.println(AIM_pkt2.AIM_data.dayMilis, HEX);
+
     digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
-  }//while
+    /*
+    while (canb.read(CAN_msg)) {
+      usb.print(F("CAN ID = "));
+      usb.println(CAN_msg.id, BIN);
+      usb.print("CAN PAYLOAD = ");
+      usb.print(CAN_msg.buf[0], HEX);
+      usb.print(CAN_msg.buf[1], HEX);
+      usb.print(CAN_msg.buf[2], HEX);
+      usb.print(CAN_msg.buf[3], HEX);
+      digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
+    
+    }//while
+    */
+  }
 }//loop()

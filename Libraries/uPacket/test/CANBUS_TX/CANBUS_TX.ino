@@ -1,10 +1,8 @@
-// haha oh SHIT (transmitter edition)
+// Canbus transmitter and self test
 
 #include "STM32_CAN.h"
 #include <SoftwareSerial.h>
 #include "CAN_PACKET.h"
-#include <bitset>
-#include <iostream>
 #include <cstdint>
 #include <cstring>
 #define CAN_RX_PIN PB8
@@ -21,54 +19,12 @@
 SoftwareSerial usb(USB_RX_PIN, USB_TX_PIN); 
 // CANBUS trash wahooo
 STM32_CAN canb( CAN1, ALT );    //CAN1 ALT is PB8+PB9
-static CAN_message_t CAN_msg;
 
+AIM_packet AIM_pkt;
 
-void sendPacket() {
-		AIM_packet pkt; // instance pkt = packet
-		
-		// assigning test values
-    pkt.AIM_id.unused= 31;
-    pkt.AIM_id.future_use = 0x2;
-    pkt.AIM_id.origin = 0x2;
-    pkt.AIM_id.dest = 0x3;
-
-    // packing bits
-    uint16_t idPacked =
-        ((pkt.AIM_id.unused     & 0x1F) << 11) |
-        ((pkt.AIM_id.origin     & 0x0F) << 7)  |
-        ((pkt.AIM_id.dest       & 0x0F) << 3)  |
-        ((pkt.AIM_id.future_use & 0x07));
-
-    
-    // assigning test values
-    pkt.AIM_data.dayMilis = 23; 
-    pkt.AIM_data.data = 123456;
-   
-		CAN_message_t CAN_msg{};
-		CAN_msg.id = idPacked & 0x07FF;          // use packed ID from pkt.AIM_id
-		CAN_msg.flags.extended = 0;              // standard 11-bit frame
-		CAN_msg.len = sizeof(pkt.AIM_data);      // 8 bytes
-
-		std::memcpy(CAN_msg.buf, &pkt.AIM_data, sizeof(pkt.AIM_data));
-    //canb.write(CAN_msg);     //send
-
-    //usb.println(CAN_msg.id);
-    //usb.println(CAN_msg.len);
-    for(int i = 0; i < CAN_msg.len; i++){
-      usb.print("CAN Data index: ");
-      usb.println(i+1);
-      usb.print("0x");
-      usb.println(CAN_msg.buf[i], HEX);
-      usb.print("0b");
-      usb.println(CAN_msg.buf[i], BIN);
-    }
-
-}
 void canSend(){
-  canb.write(CAN_msg);     //send
+  //canb.write(can_msg);     //send
 }//canSend()
-
 
 
 void setup() {
@@ -79,12 +35,46 @@ void setup() {
   usb.begin(USB_BAUD);
 
   pinMode(DB_LED_PIN, OUTPUT);
+  
+  AIM_pkt.origin = 0x1;
+  AIM_pkt.dest = 0x2;
+  AIM_pkt.AIM_data.dayMilis = 0x1234;
+  AIM_pkt.AIM_data.data = 0x123;
+
 }//setup()
 
 void loop() {
   // put your main code here, to run repeatedly:
   usb.println("Sending CAN packet");
-  sendPacket();
+  // sendPacket();
+  usb.print("AIM origin: 0x");
+  usb.println(AIM_pkt.origin, HEX);
+  usb.print("AIM dest: 0x");
+  usb.println(AIM_pkt.dest, HEX);
+  usb.print("AIM data: 0x");
+  usb.println(AIM_pkt.AIM_data.data, HEX);
+  usb.print("AIM mili: 0x");
+  usb.println(AIM_pkt.AIM_data.dayMilis, HEX);
+  CAN_message_t can_msg1;
+  packAimPkt(AIM_pkt, can_msg1);
+
+  // Unpack code, can be used to test self
+  /*
+  AIM_packet AIM_pkt2;
+  unpackAimPkt(can_msg1, AIM_pkt2);
+  
+  usb.print("AIM origin2: 0x");
+  usb.println(AIM_pkt2.origin, HEX);
+  usb.print("AIM dest2: 0x");
+  usb.println(AIM_pkt2.dest, HEX);
+  usb.print("AIM data2: 0x");
+  usb.println(AIM_pkt2.AIM_data.data, HEX);
+  usb.print("AIM mili2: 0x");
+  usb.println(AIM_pkt2.AIM_data.dayMilis, HEX);
+
+ 
+  */
   delay(1000);
   digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
+  canb.write(can_msg1);
 }//loop()

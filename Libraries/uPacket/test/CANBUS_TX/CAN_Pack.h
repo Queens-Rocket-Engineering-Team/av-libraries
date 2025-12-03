@@ -1,6 +1,5 @@
 #include "CAN_PACKET.h"
 #include <cstring>
-#include <bitset>
 #include <iostream>
 #include <cstdint>
 
