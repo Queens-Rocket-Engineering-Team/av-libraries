@@ -9,7 +9,7 @@
 #define USB_RX_PIN PA10 // for GPS board
 #define USB_TX_PIN PA9 // for GPS board
 #define DB_LED_PIN PA15
-
+#define INTERVAL 100
 #define USB_BAUD 9600
 
 SoftwareSerial usb(USB_RX_PIN, USB_TX_PIN); 
@@ -30,6 +30,9 @@ uint8_t aim_dests[num_pkts] = {AIM_DEST_COMMS, AIM_DEST_COMMS, AIM_DEST_BROADCAS
 uint8_t aim_types[num_pkts] = {AIM_TYP_GPS_LAT, AIM_TYP_GPS_LONG, AIM_TYP_TIME};
 uint8_t active_num_pkts = num_pkts;
 
+unsigned long current_time;
+unsigned long previous_time;
+unsigned int current_tx_index=0;
 void setup() {
   // setup AIM network
   aimn.begin();
@@ -102,17 +105,19 @@ void loop() {
     }
     num_recv++;
   }
- 
-  for(uint8_t i = 0; i < active_num_pkts; i++) {
-    dataPkt aim_data = {i, i+1};
-    aimn.sendPkt(aim_data, aim_dests[i], aim_types[i]);
+  current_time = millis();
+  //old: for(uint8_t i = 0; i < active_num_pkts; i++) {
+  if((current_time-previous_time)>INTERVAL){
+    previous_time=current_time;
 
+    dataPkt aim_data = {current_tx_index, current_time };
+    aimn.sendPkt(aim_data, aim_dests[current_tx_index], aim_types[current_tx_index]);
     usb.print("Sent Packet #");
-    usb.print(i);
+    usb.print(current_tx_index);
     usb.print(": dest=0x");
-    usb.print(aim_dests[i], HEX);
+    usb.print(aim_dests[current_tx_index], HEX);
     usb.print(", type=0x");
-    usb.print(aim_types[i], HEX);
+    usb.print(aim_types[current_tx_index], HEX);
     usb.print(", data=0x");
     usb.print(aim_data.data, HEX);
     usb.print(", =");
@@ -120,5 +125,6 @@ void loop() {
     usb.println("ms");
     digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
     delay(1000);
+    current_tx_index = ++current_tx_index % 3;
   }
 }
