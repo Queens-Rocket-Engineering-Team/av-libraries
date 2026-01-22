@@ -6,10 +6,10 @@
 #include <cstring>
 #define CAN_RX_PIN PB8
 #define CAN_TX_PIN PB9
-#define USB_RX_PIN PA10 // for GPS board
-#define USB_TX_PIN PA9 // for GPS board
+#define USB_RX_PIN PA9 // for GPS board
+#define USB_TX_PIN PA10 // for GPS board
 #define DB_LED_PIN PA15
-#define INTERVAL 100
+#define INTERVAL 1000
 #define USB_BAUD 9600
 
 SoftwareSerial usb(USB_RX_PIN, USB_TX_PIN); 
@@ -30,9 +30,11 @@ uint8_t aim_dests[num_pkts] = {AIM_DEST_COMMS, AIM_DEST_COMMS, AIM_DEST_BROADCAS
 uint8_t aim_types[num_pkts] = {AIM_TYP_GPS_LAT, AIM_TYP_GPS_LONG, AIM_TYP_TIME};
 uint8_t active_num_pkts = num_pkts;
 
+
 unsigned long current_time;
 unsigned long previous_time;
 unsigned int current_tx_index=0;
+
 void setup() {
   // setup AIM network
   aimn.begin();
@@ -124,7 +126,7 @@ void loop() {
     usb.print(aim_data.dayMilis);
     usb.println("ms");
     digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
-    delay(1000);
     current_tx_index = ++current_tx_index % 3;
+    
   }
 }

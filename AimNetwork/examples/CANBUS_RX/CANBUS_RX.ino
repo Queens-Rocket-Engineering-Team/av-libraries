@@ -23,8 +23,10 @@ dataPkt recv_data;
 uint8_t recv_origin;
 uint8_t recv_type;
 
-unsigned int current_tx_index=0;
-const unsigned int MY_DEST = 0x1;
+unsigned int packet_cnt=0;
+
+
+
 void setup() {
   // setup AIM network
   aimn.begin();
@@ -33,12 +35,14 @@ void setup() {
   usb.begin(USB_BAUD);
 
   pinMode(DB_LED_PIN, OUTPUT);
+
+ 
 }//setup()
 
 void loop() {  
   if(aimn.readPkt(recv_data, recv_origin, recv_type)){
     usb.print("Received Packet #");
-    usb.print(current_tx_index);
+    usb.print(packet_cnt);
     usb.print(": origin=0x");
     usb.print(recv_origin, HEX);
     usb.print(", type=0x");
@@ -50,6 +54,6 @@ void loop() {
     usb.println("ms");
 
     digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
-    current_tx_index = ++current_tx_index % 3;
+    packet_cnt = ++packet_cnt;
   }
 }//loop()

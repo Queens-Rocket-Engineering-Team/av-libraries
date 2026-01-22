@@ -12,7 +12,14 @@ void AimNetwork::begin() {
   _canb.begin();
   _canb.setBaudRate(_baud);
   // Filter for incoming dest==_origin
-  // _canb.setMBFilterProcessing(MB0, 0x008, 0x008);
+  const uint16_t id_dest   = (uint16_t)((_origin & 0x07) << 5);
+  const uint16_t mask_dest = 0x0E0;
+  _canb.setMBFilterProcessing(MB0, id_dest, mask_dest);
+
+  // Broadcast filter
+  const uint16_t id_broadcast  = (uint16_t)(AIM_DEST_BROADCAST << 5); 
+  const uint16_t mask_broadcast = 0x0E0;
+  _canb.setMBFilterProcessing(MB1, id_broadcast, mask_broadcast);
 }
 
 bool AimNetwork::packAimPkt(aimPkt aim_pkt, CAN_message_t &can_msg) {

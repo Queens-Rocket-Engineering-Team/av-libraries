@@ -48,7 +48,6 @@ public:
 
   bool sendPkt(dataPkt aim_data, uint8_t aim_dest, uint8_t aim_type);
   bool readPkt(dataPkt &aim_data, uint8_t &aim_origin, uint8_t &aim_type);
-  uint16_t readPkts(dataPkt aim_datas[], uint8_t aim_type[], uint8_t origin[], uint16_t len);
 
 private:
   static STM32_CAN _canb;
