@@ -1,14 +1,13 @@
-#include "aim_network.h"
+#include "aim_can_driver.h"
 
 // CAN1 ALT is PB8+PB9
-STM32_CAN AimNetwork::_canb(CAN1, ALT, RX_SIZE_16, TX_SIZE_16);
+STM32_CAN AimCanDriver::_canb(CAN1, ALT, RX_SIZE_16, TX_SIZE_16);
 
-AimNetwork::AimNetwork(uint8_t origin, uint32_t baud) {
+AimCanDriver::AimCanDriver(uint8_t origin, uint32_t baud) {
   _origin = origin;
   _baud = baud;
 }
-
-void AimNetwork::begin() {
+void AimCanDriver::begin() {
   _canb.begin();
   _canb.setBaudRate(_baud);
   // Filter for incoming dest==_origin
@@ -22,7 +21,7 @@ void AimNetwork::begin() {
   _canb.setMBFilterProcessing(MB1, id_broadcast, mask_broadcast);
 }
 
-bool AimNetwork::packAimPkt(aimPkt aim_pkt, CAN_message_t &can_msg) {
+bool AimCanDriver::packAimPkt(aimPkt aim_pkt, CAN_message_t &can_msg) {
   // packing bits
   uint16_t id_packed =
       ((aim_pkt.origin     & 0x07) << 8)  | // 11 bits - 3 bits
@@ -42,7 +41,7 @@ bool AimNetwork::packAimPkt(aimPkt aim_pkt, CAN_message_t &can_msg) {
   return true;
 }
 
-bool AimNetwork::unpackAimPkt(CAN_message_t can_msg, aimPkt &aim_pkt) {
+bool AimCanDriver::unpackAimPkt(CAN_message_t can_msg, aimPkt &aim_pkt) {
   // unpacking bits
   uint16_t id_packed = can_msg.id;
   aim_pkt.origin = (id_packed >> 8) & 0x07;
@@ -58,40 +57,34 @@ bool AimNetwork::unpackAimPkt(CAN_message_t can_msg, aimPkt &aim_pkt) {
   }
   return true;
 }
+bool AimCanDriver::transmit(const uint8_t* buf, size_t len) {
+  // Sanity check: network should only send full AIM packets
+  if (len != sizeof(aimPkt)) return false;
 
-bool AimNetwork::sendPkt(dataPkt aim_data, uint8_t aim_dest, uint8_t aim_type){
-  bool ret = true;
-  aimPkt aim_pkt;
-  aim_pkt.origin = _origin;
-  aim_pkt.dest = aim_dest;
-  aim_pkt.type = aim_type;
-  aim_pkt.data = aim_data;
+  // Reconstruct AIM packet from raw bytes
+  aimPkt pkt;
+  memcpy(&pkt, buf, sizeof(pkt));
+
+  // Convert AIM packet → CAN frame
+  CAN_message_t can_msg;
+  if (!packAimPkt(pkt, can_msg)) return false;
+
+  // Send on CAN bus
+  return _canb.write(can_msg);
+}
+bool AimCanDriver::receive(uint8_t* buf, size_t len) {
+  // Sanity check: network should only receive full AIM packets
+  if (len != sizeof(aimPkt)) return false;
 
   CAN_message_t can_msg;
-  ret = packAimPkt(aim_pkt, can_msg);
- 
-  ret &= _canb.write(can_msg);
+  if (!_canb.read(can_msg)) return false;
 
-  return ret;
+  // Convert CAN frame → AIM packet
+  aimPkt pkt;
+  if (!unpackAimPkt(can_msg, pkt)) return false;
+
+  // Copy AIM packet to output buffer
+  memcpy(buf, &pkt, sizeof(pkt));
+  return true;
 }
 
-bool AimNetwork::readPkt(dataPkt &aim_data, uint8_t &aim_origin, uint8_t &aim_type) {
-  bool ret = false;
-  aim_origin = AIM_ORG_NOORG;
-  aim_type = AIM_TYP_NODATA;
-
-  CAN_message_t can_msg;
-  aimPkt aim_pkt;
-
-  if(_canb.read(can_msg)) {
-    ret = true;
-    // not catastropic if unpack fails on one packet
-    if(unpackAimPkt(can_msg, aim_pkt)) {
-      aim_data = aim_pkt.data;
-      aim_origin = aim_pkt.origin;
-      aim_type = aim_pkt.type;
-    }
-  }
- 
-  return ret;
-}
