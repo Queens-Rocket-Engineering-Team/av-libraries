@@ -1,6 +1,6 @@
 // Canbus Receiver
 
-#include <aim_network.h>
+#include <aim_can_driver.h>
 #include <SoftwareSerial.h>
 #include <cstdint>
 #include <cstring>
@@ -16,8 +16,8 @@
 SoftwareSerial usb(USB_RX_PIN, USB_TX_PIN); 
 
 // AimNetwork instance (Comms Board Origin)
-AimNetwork aimn(AIM_ORG_COMMS, 62500);
-
+AimCanDriver canHw(AIM_ORG_GPS, 62500);
+AimNetwork aimn(&canHw, AIM_ORG_GPS);
 // Data containers
 dataPkt recv_data;
 uint8_t recv_origin;

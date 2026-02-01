@@ -1,20 +1,22 @@
 // Canbus transmitter and self test
 
 #include <aim_network.h>
+#include <aim_can_driver.h>
 #include <SoftwareSerial.h>
 #include <cstdint>
 #include <cstring>
 #define CAN_RX_PIN PB8
 #define CAN_TX_PIN PB9
-#define USB_RX_PIN PA9 // for GPS board
-#define USB_TX_PIN PA10 // for GPS board
+#define USB_RX_PIN PA10 // for GPS board
+#define USB_TX_PIN PA9 // for GPS board
 #define DB_LED_PIN PA15
 #define INTERVAL 1000
 #define USB_BAUD 9600
-
+#define RX_SIZE_16 16
 SoftwareSerial usb(USB_RX_PIN, USB_TX_PIN); 
 
-AimNetwork aimn(AIM_ORG_GPS, 62500);
+AimCanDriver canHw(AIM_ORG_GPS, 62500);
+AimNetwork aimn(&canHw, AIM_ORG_GPS);
 
 // Reading from network
 dataPkt recv_data;
@@ -46,7 +48,6 @@ void setup() {
 }
 
 void loop() {
-
   uint32_t num_recv = 0;
   while(aimn.readPkt(recv_data, recv_origin, recv_type)) {
     usb.print("Received Packet #");
