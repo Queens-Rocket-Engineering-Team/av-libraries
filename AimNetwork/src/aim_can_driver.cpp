@@ -21,7 +21,7 @@ void AimCanDriver::begin() {
   _canb.setMBFilterProcessing(MB1, id_broadcast, mask_broadcast);
 }
 
-bool AimCanDriver::packAimPkt(aimPkt aim_pkt, CAN_message_t &can_msg) {
+bool AimCanDriver::packAimPkt(const aimPkt &aim_pkt, CAN_message_t &can_msg) {
   // packing bits
   uint16_t id_packed =
       ((aim_pkt.origin     & 0x07) << 8)  | // 11 bits - 3 bits

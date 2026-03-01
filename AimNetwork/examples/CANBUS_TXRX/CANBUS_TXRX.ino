@@ -19,12 +19,9 @@ AimCanDriver canHw(AIM_ORG_GPS, 62500);
 AimNetwork aimn(&canHw, AIM_ORG_GPS);
 
 // Reading from network
-dataPkt recv_data;
-uint8_t recv_origin;
-uint8_t recv_type;
-
-dataPkt recv_datas[RX_SIZE_16];
-uint8_t recv_types[RX_SIZE_16];
+aimPkt recv_pkt;
+// packet used for building / logging transmissions
+aimPkt pkt;
 
 // Writing to network
 const uint8_t num_pkts = 3;
@@ -49,20 +46,20 @@ void setup() {
 
 void loop() {
   uint32_t num_recv = 0;
-  while(aimn.readPkt(recv_data, recv_origin, recv_type)) {
+  while(aimn.readPkt(recv_pkt)) {
     usb.print("Received Packet #");
     usb.print(num_recv);
     usb.print(": origin=0x");
-    usb.print(recv_origin, HEX);
+    usb.print(recv_pkt.origin, HEX);
     usb.print(", type=0x");
-    usb.print(recv_type, HEX);
+    usb.print(recv_pkt.type, HEX);
     usb.print(", data=0x");
-    usb.print(recv_data.data, HEX);
+    usb.print(recv_pkt.getData(), HEX);
     usb.print(", =");
-    usb.print(recv_data.dayMilis);
+    usb.print(recv_pkt.getDayMillis());
     usb.println("ms");
 
-    switch(recv_type){
+    switch(recv_pkt.type){
       // add flash logging
       case AIM_TYP_TIME:
         // Logic: Sync system clock with received timestamp
@@ -113,8 +110,10 @@ void loop() {
   if((current_time-previous_time)>INTERVAL){
     previous_time=current_time;
 
-    dataPkt aim_data = {current_tx_index, current_time };
-    aimn.sendPkt(aim_data, aim_dests[current_tx_index], aim_types[current_tx_index]);
+    // build payload: upper 27 bits = millis (27-bit), lower 24 bits = counter
+    pkt.data = pkt.setDataPkt(millis(), current_tx_index);
+    // store in reusable packet struct for printing
+    aimn.sendPkt(pkt.data, aim_dests[current_tx_index], aim_types[current_tx_index]);
     usb.print("Sent Packet #");
     usb.print(current_tx_index);
     usb.print(": dest=0x");
@@ -122,9 +121,9 @@ void loop() {
     usb.print(", type=0x");
     usb.print(aim_types[current_tx_index], HEX);
     usb.print(", data=0x");
-    usb.print(aim_data.data, HEX);
+    usb.print(pkt.getData(), HEX);
     usb.print(", =");
-    usb.print(aim_data.dayMilis);
+    usb.print(pkt.getDayMillis());
     usb.println("ms");
     digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
     current_tx_index = ++current_tx_index % 3;

@@ -18,7 +18,7 @@ private:
   uint32_t _baud;
 
   
-  bool packAimPkt(aimPkt aim_pkt, CAN_message_t &can_msg);
+  bool packAimPkt(const aimPkt &aim_pkt, CAN_message_t &can_msg);
   bool unpackAimPkt(CAN_message_t can_msg, aimPkt &aim_pkt);
 };
 

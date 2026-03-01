@@ -18,10 +18,7 @@ SoftwareSerial usb(USB_RX_PIN, USB_TX_PIN);
 // AimNetwork instance (Comms Board Origin)
 AimCanDriver canHw(AIM_ORG_GPS, 62500);
 AimNetwork aimn(&canHw, AIM_ORG_GPS);
-// Data containers
-dataPkt recv_data;
-uint8_t recv_origin;
-uint8_t recv_type;
+// no separate data packet type – we work directly with aimPkt
 
 unsigned int packet_cnt=0;
 
@@ -36,21 +33,24 @@ void setup() {
 
   pinMode(DB_LED_PIN, OUTPUT);
 
- 
+  usb.print("Size of aimPkt:");
+  usb.println(sizeof(aimPkt));
 }//setup()
 
+aimPkt pkt;
+
 void loop() {  
-  if(aimn.readPkt(recv_data, recv_origin, recv_type)){
+  if(aimn.readPkt(pkt)){
     usb.print("Received Packet #");
     usb.print(packet_cnt);
     usb.print(": origin=0x");
-    usb.print(recv_origin, HEX);
+    usb.print(pkt.origin, HEX);
     usb.print(", type=0x");
-    usb.print(recv_type, HEX);
+    usb.print(pkt.type, HEX);
     usb.print(", data=0x");
-    usb.print(recv_data.data, HEX);
+    usb.print(pkt.getData(), HEX);
     usb.print(", =");
-    usb.print(recv_data.dayMilis);
+    usb.print(pkt.getDayMilis(),HEX);
     usb.println("ms");
 
     digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
