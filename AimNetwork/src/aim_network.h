@@ -35,13 +35,10 @@
 #define AIM_TYP_GPS_LONG  0x8
 #define AIM_TYP_ALT       0x9
 #define AIM_TYP_LOWPW     0xA
+#define AIM_TYPE_WATCHDOG 0xB
 #define AIM_TYP_NODATA    0xE
 #define AIM_TYP_UNDEFINED 0xF
 
-typedef struct dataPkt {
-	uint32_t dayMilis; // time of day in miliseconds
-	uint32_t data;
-}dataPkt;
 
 // AIM Packet (Avionics Interconnected Module)
 typedef struct aimPkt {
@@ -49,8 +46,24 @@ typedef struct aimPkt {
   uint8_t origin : AIM_ORG_ADDR_SIZE;
   uint8_t dest : AIM_DEST_ADDR_SIZE;
   uint8_t type : AIM_TYP_ADDR_SIZE;
-  dataPkt data = {0, 0};
-}aimPkt;
+  uint64_t data;
+
+  uint32_t getDayMillis() const {
+    return (uint32_t)((data >> 24) & 0x7FFFFFF);
+  }
+  uint32_t getData() const {
+    return (uint32_t)(data & 0xFFFFFF);
+  }
+  // setData takes the 27-bit millis and 24-bit payload and packs them into a 64-bit integer
+  static uint64_t setDataPkt(uint32_t millis, uint32_t payload) {
+    // enforce bit widths: 27-bit millis, 24-bit payload
+    uint64_t m = (uint64_t)millis & 0x7FFFFFFull;
+    uint64_t p = (uint64_t)payload & 0xFFFFFFull;
+    return (m << 24) | p;
+  }
+
+} aimPkt;
+
 
 class AimTransceiver {
 public:
@@ -67,22 +80,21 @@ public:
 
   void begin() { _hw->begin(); }
 
-  bool sendPkt(dataPkt data, uint8_t dest, uint8_t type) {
+  bool sendPkt(uint64_t data, uint8_t dest, uint8_t type) {
     aimPkt pkt;
     pkt.origin = _origin;
     pkt.dest = dest;
     pkt.type = type;
+    // pack the fields from the 27/24-bit values into the 64‑bit container
     pkt.data = data;
     // Send the raw bytes without knowing if it's CAN or LoRa
     return _hw->transmit((const uint8_t*)&pkt, sizeof(aimPkt));
   }
 
-  bool readPkt(dataPkt &aim_data, uint8_t &aim_origin, uint8_t &aim_type) {
-    aimPkt pkt;
-    if (_hw->receive((uint8_t*)&pkt, sizeof(aimPkt))) {
-      aim_data = pkt.data;
-      aim_origin = pkt.origin;
-      aim_type = pkt.type;
+  bool readPkt(aimPkt &pkt) {
+    aimPkt rev_pkt;
+    if (_hw->receive((uint8_t*)&rev_pkt, sizeof(aimPkt))) {
+      pkt = rev_pkt;
       return true;
     }
     else return false;
