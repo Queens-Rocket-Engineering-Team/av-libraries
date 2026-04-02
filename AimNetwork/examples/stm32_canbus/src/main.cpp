@@ -1,14 +1,16 @@
-// AimNetwork CAN TX/RX Example
+// AimNetwork STM32 CAN Example
 // Demonstrates sending and receiving packets on the AIM bus.
+// Copy this folder as a starting point for new STM32 modules.
 
+#include <Arduino.h>
 #include <aim_network.h>
 #include <aim_can_driver.h>
 #include <SoftwareSerial.h>
 
 #define CAN_RX_PIN PB8
 #define CAN_TX_PIN PB9
-#define USB_RX_PIN PA10 // for GPS board
-#define USB_TX_PIN PA9 // for GPS board
+#define USB_RX_PIN PB10
+#define USB_TX_PIN PB11
 #define DB_LED_PIN PA15
 #define USB_BAUD   9600
 
@@ -33,7 +35,7 @@ void setup() {
 
 void loop() {
 
-  // ── Receive ────────────────────────────────────────────────
+  // Receive
   while (aim.readPkt(rxPkt)) {
     aimPrintPkt(usb, rxPkt, "RX");
 
@@ -46,14 +48,14 @@ void loop() {
     }
   }
 
-  // ── Transmit ───────────────────────────────────────────────
+  // Transmit
   if (millis() - lastTx > TX_INTERVAL) {
     lastTx = millis();
 
-    // Quick: one-liner send (millis + payload + dest + type)
+    // Quick send
     aim.sendPkt(millis(), txCount, AIM_DEST_COMMS, AIM_TYP_GPS_LAT);
 
-    // Explicit: build packet, inspect it, then send
+    // Explicit send — build, inspect, send
     aimPkt txPkt;
     txPkt.origin = AIM_ORG_GPS;
     txPkt.dest   = AIM_DEST_BROADCAST;
