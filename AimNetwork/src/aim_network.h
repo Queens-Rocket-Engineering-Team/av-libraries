@@ -95,11 +95,11 @@ public:
 class AimNetwork {
 public:
   AimNetwork(AimTransceiver* hardware, uint8_t origin)
-      : _hw(hardware), _origin(origin) {}
+      : _hw(hardware), _origin(origin), _timeOffset(0) {}
 
   void begin() { _hw->begin(); }
 
-  // Send a pre-built packet (you can inspect it before sending)
+  // Send a pre-built packet
   bool sendPkt(const aimPkt& pkt) {
     return _hw->transmit((const uint8_t*)&pkt, sizeof(aimPkt));
   }
@@ -123,9 +123,20 @@ public:
     return _hw->receive((uint8_t*)&pkt, sizeof(aimPkt));
   }
 
+  // Time sync — call when receiving a TIME packet
+  void syncTime(uint32_t remoteMillis) {
+    _timeOffset = (int32_t)remoteMillis - (int32_t)millis();
+  }
+
+  // Returns millis() adjusted by the last sync offset
+  uint32_t syncedMillis() const { return millis() + _timeOffset; }
+
+  int32_t getTimeOffset() const { return _timeOffset; }
+
 private:
   AimTransceiver* _hw;
   uint8_t _origin;
+  int32_t _timeOffset;
 };
 
 #endif // AIM_NETWORK_H
