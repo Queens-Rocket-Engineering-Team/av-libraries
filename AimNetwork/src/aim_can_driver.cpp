@@ -141,14 +141,15 @@ bool AimCanDriver::transmit(const uint8_t* buf, size_t len) {
   twai_message_t twai_msg;
   if (!packAimPkt(pkt, twai_msg)) return false;
 
-  return twai_transmit(&twai_msg, pdMS_TO_TICKS(1000)) == ESP_OK;
+  return twai_transmit(&twai_msg, pdMS_TO_TICKS(1000)) == ESP_OK; // switch function to non-blocking
+
 }
 
 bool AimCanDriver::receive(uint8_t* buf, size_t len) {
   if (len != sizeof(aimPkt) || !_initialized) return false;
 
   twai_message_t twai_msg;
-  if (twai_receive(&twai_msg, pdMS_TO_TICKS(1000)) != ESP_OK) return false;
+  if (twai_receive(&twai_msg, pdMS_TO_TICKS(1000)) != ESP_OK) return false; // switch function to non-blocking
 
   aimPkt pkt;
   if (!unpackAimPkt(twai_msg, pkt)) return false;

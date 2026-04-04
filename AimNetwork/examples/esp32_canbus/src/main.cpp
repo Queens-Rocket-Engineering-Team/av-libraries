@@ -33,7 +33,7 @@ void setup() {
 
 void loop() {
   Serial.println("ESP32 CAN ALIVE");
-  // while (aim.readPkt(rxPkt)) {
+  // while (aim.readPkt(rxPkt)) { // currently blocking due to TWAI driver limitations; consider switching to non-blocking receive
   //   aimPrintPkt(Serial, rxPkt, "RX");
   // }
 
