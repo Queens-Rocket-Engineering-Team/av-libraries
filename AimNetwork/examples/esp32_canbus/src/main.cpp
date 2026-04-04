@@ -2,15 +2,14 @@
 // Demonstrates sending and receiving packets on the AIM bus.
 // Copy this folder as a starting point for new ESP32 modules.
 //
-// NOTE: ESP32 CAN driver is not yet implemented.
-// This example will compile but CAN send/receive will return false.
+// ESP32 CAN support is currently in early stages and may not work all boards.
 
 #include <Arduino.h>
 #include <aim_network.h>
 #include <aim_can_driver.h>
 
-#define CAN_RX_PIN 4   // adjust to your board
-#define CAN_TX_PIN 5   // adjust to your board
+#define CAN_RX_PIN 0   // adjust to your board
+#define CAN_TX_PIN 0   // adjust to your board
 #define DB_LED_PIN 40
 
 AimCanDriver canHw(AIM_ORG_UPROP, 500000, CAN_RX_PIN, CAN_TX_PIN);
@@ -27,20 +26,30 @@ void setup() {
   Serial.begin(9600);
   pinMode(DB_LED_PIN, OUTPUT);
   aim.begin();
+  delay(1000);
+  Serial.println("ESP32 CAN ALIVE");
 }
 
 
 void loop() {
+  Serial.println("ESP32 CAN ALIVE");
+  // while (aim.readPkt(rxPkt)) {
+  //   aimPrintPkt(Serial, rxPkt, "RX");
+  // }
 
-  while (aim.readPkt(rxPkt)) {
-    aimPrintPkt(Serial, rxPkt, "RX");
-  }
-
-  if (millis() - lastTx > TX_INTERVAL) {
-    lastTx = millis();
-
-    aim.sendPkt(millis(), txCount, AIM_DEST_COMMS, AIM_TYP_PT1);
-
+  if (aim.syncedMillis() - lastTx > TX_INTERVAL) {
+    lastTx = aim.syncedMillis();
+    aimPkt txPkt;
+    Serial.println("Building packet...");
+    txPkt.origin = AIM_ORG_GPS;
+    txPkt.dest   = AIM_DEST_BROADCAST;
+    txPkt.type   = AIM_TYP_TIME;
+    Serial.println("packing packet...");
+    txPkt.data   = aimPkt::packData(aim.syncedMillis(), txCount);
+    Serial.println("sending packet...");
+    aim.sendPkt(aim.syncedMillis(), txCount, AIM_DEST_COMMS, AIM_TYP_PT1);
+    Serial.println("printing packet...");
+    aimPrintPkt(Serial, txPkt, "TX");
     digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
     txCount++;
   }

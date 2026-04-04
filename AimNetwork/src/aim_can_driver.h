@@ -17,7 +17,7 @@
 
 class AimCanDriver : public AimTransceiver {
 public:
-  AimCanDriver(uint8_t origin, uint32_t baud, int rxPin, int txPin);
+  AimCanDriver(uint8_t origin, uint32_t baud, int rxPin = 0, int txPin = 0);
 
   void begin() override;
   bool transmit(const uint8_t* buf, size_t len) override;
@@ -28,14 +28,14 @@ private:
   uint32_t _baud;
   int      _rxPin;
   int      _txPin;
+  bool     _initialized;
 
 #if defined(ARDUINO_ARCH_STM32)
-  static STM32_CAN* _canb;
+  static STM32_CAN _canb;
   bool packAimPkt(const aimPkt& aim_pkt, CAN_message_t& can_msg);
   bool unpackAimPkt(const CAN_message_t& can_msg, aimPkt& aim_pkt);
 
 #elif defined(ARDUINO_ARCH_ESP32)
-  bool _initialized;
   bool packAimPkt(const aimPkt& aim_pkt, twai_message_t& twai_msg);
   bool unpackAimPkt(const twai_message_t& twai_msg, aimPkt& aim_pkt);
 #endif
