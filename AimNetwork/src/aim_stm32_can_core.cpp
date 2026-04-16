@@ -5,7 +5,11 @@
 #include <cstring>
 
 namespace {
-static constexpr uint32_t kDestFilterMask = (0x07U << 10);
+static constexpr uint16_t kStdIdMask = 0x07FFU;
+// In 16-bit filter mode, StdId is left-shifted by 5 before compare.
+// AIM destination bits [7:5] therefore map to filter bits [12:10].
+static constexpr uint16_t kDestFieldFilterShift = 10U;
+static constexpr uint16_t kDestFilterMask = static_cast<uint16_t>(0x07U << kDestFieldFilterShift);
 }
 
 CAN_HandleTypeDef AimStm32CanCore::_hcan = {};
@@ -62,9 +66,9 @@ bool AimStm32CanCore::configureFilter() {
   filter.SlaveStartFilterBank = 14U;
 #endif
 
-  const uint16_t originId = static_cast<uint16_t>((_origin & 0x07U) << 10);
-  const uint16_t broadcastId = static_cast<uint16_t>((AIM_DEST_BROADCAST & 0x07U) << 10);
-  const uint16_t mask = static_cast<uint16_t>(kDestFilterMask);
+  const uint16_t originId = static_cast<uint16_t>((_origin & 0x07U) << kDestFieldFilterShift);
+  const uint16_t broadcastId = static_cast<uint16_t>((AIM_DEST_BROADCAST & 0x07U) << kDestFieldFilterShift);
+  const uint16_t mask = kDestFilterMask;
 
   filter.FilterIdHigh = originId;
   filter.FilterMaskIdHigh = mask;
@@ -143,12 +147,16 @@ bool AimStm32CanCore::flushTxMailboxes() {
 
     const Frame& frame = _txQueue[_txTail];
     CAN_TxHeaderTypeDef header = {};
-    header.StdId = frame.id & 0x07FFU;
+    header.StdId = frame.id & kStdIdMask;
     header.ExtId = 0U;
     header.IDE = CAN_ID_STD;
     header.RTR = CAN_RTR_DATA;
     header.DLC = frame.dlc;
     header.TransmitGlobalTime = DISABLE;
+
+    if (frame.dlc > 8U) {
+      return false;
+    }
 
     uint8_t payload[8] = {};
     (void)memcpy(payload, frame.data, frame.dlc);
@@ -183,9 +191,9 @@ bool AimStm32CanCore::pollRx() {
 
     if ((header.IDE == CAN_ID_STD) && (header.RTR == CAN_RTR_DATA) && (header.DLC <= 8U)) {
       Frame frame = {};
-      frame.id = static_cast<uint16_t>(header.StdId & 0x07FFU);
+      frame.id = static_cast<uint16_t>(header.StdId & kStdIdMask);
       frame.dlc = static_cast<uint8_t>(header.DLC);
-      (void)memcpy(frame.data, data, header.DLC);
+      (void)memcpy(frame.data, data, frame.dlc);
       (void)pushRx(frame);
     }
 
