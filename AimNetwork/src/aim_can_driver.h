@@ -1,5 +1,5 @@
 // aim_can_driver.h — Platform-aware CAN driver for AimNetwork
-// Supports STM32 (STM32_CAN) and ESP32 (TWAI)
+// Supports STM32 (HAL core in AimStm32CanCore) and ESP32 (TWAI)
 
 #ifndef AIM_CAN_DRIVER_H
 #define AIM_CAN_DRIVER_H
@@ -7,7 +7,7 @@
 #include "aim_network.h"
 
 #if defined(ARDUINO_ARCH_STM32)
-  #include "STM32_CAN.h"  // v1.1.2
+  #include "aim_stm32_can_core.h"
 #elif defined(ARDUINO_ARCH_ESP32)
   #include <driver/twai.h>
 #else
@@ -31,9 +31,9 @@ private:
   bool     _initialized;
 
 #if defined(ARDUINO_ARCH_STM32)
-  static STM32_CAN _canb;
-  bool packAimPkt(const aimPkt& aim_pkt, CAN_message_t& can_msg);
-  bool unpackAimPkt(const CAN_message_t& can_msg, aimPkt& aim_pkt);
+  AimStm32CanCore _canCore;
+  bool packAimPkt(const aimPkt& aim_pkt, AimStm32CanCore::Frame& can_msg);
+  bool unpackAimPkt(const AimStm32CanCore::Frame& can_msg, aimPkt& aim_pkt);
 
 #elif defined(ARDUINO_ARCH_ESP32)
   bool packAimPkt(const aimPkt& aim_pkt, twai_message_t& twai_msg);

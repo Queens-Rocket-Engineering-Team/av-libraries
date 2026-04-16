@@ -18,12 +18,5 @@
     "ststm32",
     "espressif32"
   ],
-  "dependencies": [
-    {
-      "name": "STM32_CAN",
-      "owner": "pazi88",
-      "version": "1.1.2",
-      "platforms": "ststm32"
-    }
-  ]
+  "dependencies": []
 }
