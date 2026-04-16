@@ -154,7 +154,7 @@ bool AimStm32CanCore::flushTxMailboxes() {
     header.DLC = frame.dlc;
     header.TransmitGlobalTime = DISABLE;
 
-    if (frame.dlc > 8U) {
+    if (frame.dlc != 8U) {
       return false;
     }
 
