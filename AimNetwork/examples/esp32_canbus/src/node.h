@@ -34,6 +34,6 @@ enum NodeState : uint8_t {
 
 void board_init(void);
 // Add board-specific periodic behavior in board_update().
-void board_update(uint32_t nowMs, NodeState state);
+void board_update(NodeState state);
 
 #endif  // NODE_H

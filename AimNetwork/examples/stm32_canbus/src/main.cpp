@@ -35,6 +35,7 @@ void service_can_rx(void) {
 }
 
 void service_tx(uint32_t networkNowMs) {
+  // Add periodic transmit-side behavior in this service pattern.
   const uint32_t scheduleNowMs = millis();
 
   // TX SECTION 1: node heartbeat.
@@ -67,20 +68,19 @@ void run_state_machine(uint32_t networkNowMs) {
     return;
   }
 
-  board_update(networkNowMs, g_schedulerState.value);
+  board_update(g_schedulerState.value);
   service_tx(networkNowMs);
 }
 
 void board_init(void) {
-  AIM_ASSERT(NODE_ORIGIN <= AIM_ORG_ADDR_MAX);
   // BOARD EXTENSION POINT: add one-time board setup here.
+  AIM_ASSERT(NODE_ORIGIN <= AIM_ORG_ADDR_MAX);
 }
 
-void board_update(uint32_t networkNowMs, NodeState state) {
-  AIM_ASSERT(state <= FAULT);
-  (void)networkNowMs;
-  (void)state;
+void board_update(NodeState state) {
   // BOARD EXTENSION POINT: add recurring board logic here.
+  AIM_ASSERT(state <= FAULT);
+  (void)state;
 }
 
 void setup(void) {

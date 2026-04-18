@@ -70,7 +70,7 @@ void kick_watchdog(void) {
   }
 }
 
-void init_node_health(uint32_t nowMs) {
+void init_node_health(uint32_t networkNowMs) {
   if (NODE_ENABLE_HEALTH_MONITOR == 0U) {
     LOG_INFO("Node-health monitor disabled");
     return;
@@ -81,7 +81,7 @@ void init_node_health(uint32_t nowMs) {
       kTrackedNodeCount,
       g_nodeHealth,
       NODE_HEALTH_TIMEOUT_MS,
-      nowMs);
+      networkNowMs);
   AIM_ASSERT(configured);
 
   for (uint8_t i = 0U; i < kTrackedNodeCount; i++) {
@@ -91,7 +91,7 @@ void init_node_health(uint32_t nowMs) {
   LOG_INFO("Node-health monitor enabled (%u tracked)", static_cast<unsigned>(kTrackedNodeCount));
 }
 
-void service_can_rx(uint32_t nowMs) {
+void service_can_rx(uint32_t networkNowMs) {
   // Handle incoming bus messages and custom packet branches here.
   for (uint8_t i = 0U; i < kMaxRxFramesPerLoop; i++) {
     aimPkt pkt = {};
@@ -103,17 +103,17 @@ void service_can_rx(uint32_t nowMs) {
       g_aim.syncTime(static_cast<uint32_t>(pkt.getPayload64()));
     }
     if (pkt.type == AIM_TYP_HEARTBEAT) {
-      g_aim.updateHealthOnHeartbeat(pkt.origin, nowMs);
+      g_aim.updateHealthOnHeartbeat(pkt.origin, networkNowMs);
     }
   }
 }
 
-void service_node_health_monitor(uint32_t nowMs) {
+void service_node_health_monitor(uint32_t networkNowMs) {
   if (NODE_ENABLE_HEALTH_MONITOR == 0U) {
     return;
   }
 
-  g_aim.evaluateHealth(nowMs);
+  g_aim.evaluateHealth(networkNowMs);
   for (uint8_t i = 0U; i < kTrackedNodeCount; i++) {
     const AimNodeHealth& health = g_nodeHealth[i];
     const uint8_t origin = health.origin;
@@ -154,7 +154,7 @@ void service_tx(uint32_t networkNowMs) {
   // TX SECTION 3: reserved for future periodic TX behavior.
 }
 
-void run_state_machine(uint32_t nowMs) {
+void run_state_machine(uint32_t networkNowMs) {
   if (g_schedulerState.value > FAULT) {
     g_schedulerState.value = FAULT;
   }
@@ -168,21 +168,20 @@ void run_state_machine(uint32_t nowMs) {
     return;
   }
 
-  service_node_health_monitor(nowMs);
-  board_update(nowMs, g_schedulerState.value);
-  service_tx(nowMs);
+  service_node_health_monitor(networkNowMs);
+  board_update(g_schedulerState.value);
+  service_tx(networkNowMs);
 }
 
 void board_init(void) {
-  AIM_ASSERT(NODE_ORIGIN <= AIM_ORG_ADDR_MAX);
   // BOARD EXTENSION POINT: add one-time board setup here.
+  AIM_ASSERT(NODE_ORIGIN <= AIM_ORG_ADDR_MAX);
 }
 
-void board_update(uint32_t nowMs, NodeState state) {
+void board_update(NodeState state) {
+  // BOARD EXTENSION POINT: add recurring board logic here.
   AIM_ASSERT(state <= FAULT);
   (void)state;
-  (void)nowMs;
-  // BOARD EXTENSION POINT: add recurring board logic here.
 }
 
 void setup(void) {
@@ -203,10 +202,10 @@ void setup(void) {
 void loop(void) {
   AIM_ASSERT(g_schedulerState.value <= FAULT);
 
-  const uint32_t nowMs = g_aim.syncedMillis();
+  const uint32_t networkNowMs = g_aim.syncedMillis();
   // Main scheduler order: RX, state machine, watchdog.
-  service_can_rx(nowMs);
-  run_state_machine(nowMs);
+  service_can_rx(networkNowMs);
+  run_state_machine(networkNowMs);
 
   kick_watchdog();
 }
