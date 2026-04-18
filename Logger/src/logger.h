@@ -1,6 +1,6 @@
 // logger.h
-#ifndef LOGGER_HPP
-#define LOGGER_HPP
+#ifndef LOGGER_H
+#define LOGGER_H
 
 #include <Arduino.h>
 #include <stdarg.h>
@@ -58,4 +58,4 @@ extern Logger* g_logger;
   #define LOG_ERROR(...) do {} while (0)
 #endif
 
-#endif // LOGGER_HPP
+#endif // LOGGER_H
