@@ -1,0 +1,28 @@
+{
+  "name": "FlashTable",
+  "version": "0.1.0",
+  "description": "Flash Storage and Compression Library",
+  "keywords": "flash, storage, logging",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Queens-Rocket-Engineering-Team/av-libraries.git"
+  },
+  "authors": [
+    {
+      "name": "QRET",
+      "maintainer": true
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": [
+    "ststm32",
+    "espressif32"
+  ],
+  "dependencies": [
+    {
+      "owner": "paulstoffregen",
+      "name": "SerialFlash",
+      "version": "*"
+    }
+  ]
+}
