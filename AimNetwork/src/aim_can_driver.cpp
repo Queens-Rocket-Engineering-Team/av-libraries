@@ -1,155 +1,191 @@
 #include "aim_can_driver.h"
+
 #include <cstring>
+#include <logger.h>
+
+#if defined(ARDUINO_ARCH_STM32)
+
+AimCanDriver::AimCanDriver(uint8_t origin, uint32_t baud, CAN_TypeDef* canbus)
+    : _origin(origin),
+      _initialized(false),
+      _canCore(baud, canbus) {
+}
+
+void AimCanDriver::getStm32Stats(AimStm32CanCore::Stats& stats) const {
+  _canCore.getStats(stats);
+}
+
+void AimCanDriver::clearStm32Stats() {
+  _canCore.clearStats();
+}
+
+#elif defined(ARDUINO_ARCH_ESP32)
 
 AimCanDriver::AimCanDriver(uint8_t origin, uint32_t baud, int rxPin, int txPin)
     : _origin(origin),
-      _baud(baud),
-      _rxPin(rxPin),
-      _txPin(txPin),
-      _initialized(false)
-#if defined(ARDUINO_ARCH_STM32)
-      , _canCore(origin, baud)
+      _initialized(false),
+      _canCore(baud, rxPin, txPin) {
+}
+
+void AimCanDriver::getEsp32Stats(AimEsp32CanCore::Stats& stats) const {
+  _canCore.getStats(stats);
+}
+
+void AimCanDriver::clearEsp32Stats() {
+  _canCore.clearStats();
+}
+
 #endif
-{
+
+bool AimCanDriver::packAimPkt(const aimPkt& aim_pkt, CanCoreFrame& can_msg) {
+  AIM_ASSERT((aim_pkt.origin & 0xF8U) == 0U);
+  AIM_ASSERT((aim_pkt.dest & 0xF8U) == 0U);
+  AIM_ASSERT((aim_pkt.type & 0xF0U) == 0U);
+
+  can_msg.id = (((aim_pkt.origin & 0x07U) << 8) |
+                ((aim_pkt.dest   & 0x07U) << 5) |
+                ((aim_pkt.type   & 0x0FU))) & 0x07FFU;
+  can_msg.dlc = static_cast<uint8_t>(sizeof(aim_pkt.data));
+  if (can_msg.dlc != 8U) {
+    return false;
+  }
+
+  (void)memcpy(can_msg.data, &aim_pkt.data, sizeof(aim_pkt.data));
+  return true;
 }
 
-// ── STM32 ────────────────────────────────────────────────────
+bool AimCanDriver::unpackAimPkt(const CanCoreFrame& can_msg, aimPkt& aim_pkt) {
+  AIM_ASSERT((can_msg.id & 0xF800U) == 0U);
+  AIM_ASSERT(can_msg.dlc <= 8U);
+
+  aim_pkt.origin = static_cast<uint8_t>((can_msg.id >> 8) & 0x07U);
+  aim_pkt.dest = static_cast<uint8_t>((can_msg.id >> 5) & 0x07U);
+  aim_pkt.type = static_cast<uint8_t>(can_msg.id & 0x0FU);
+
+  if (sizeof(aim_pkt.data) != can_msg.dlc) {
+    return false;
+  }
+
+  (void)memcpy(&aim_pkt.data, can_msg.data, can_msg.dlc);
+  return true;
+}
+
+void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
+  const char* const op = isBeginFailure ? "begin" : "tx";
+
 #if defined(ARDUINO_ARCH_STM32)
-
-void AimCanDriver::begin() {
-  _initialized = _canCore.begin();
-}
-
-// AIM 11-bit CAN ID: [10:8]=origin, [7:5]=dest, [4:0]=type(4-bit)
-bool AimCanDriver::packAimPkt(const aimPkt& aim_pkt, AimStm32CanCore::Frame& can_msg) {
-  can_msg.id = (((aim_pkt.origin & 0x07) << 8) |
-                ((aim_pkt.dest   & 0x07) << 5) |
-                ((aim_pkt.type   & 0x0F))) & 0x07FF;
-  can_msg.dlc = sizeof(aim_pkt.data);
-  if (can_msg.dlc != 8) return false;
-
-  memcpy(can_msg.data, &aim_pkt.data, sizeof(aim_pkt.data));
-  return true;
-}
-
-bool AimCanDriver::unpackAimPkt(const AimStm32CanCore::Frame& can_msg, aimPkt& aim_pkt) {
-  aim_pkt.origin = (can_msg.id >> 8) & 0x07;
-  aim_pkt.dest   = (can_msg.id >> 5) & 0x07;
-  aim_pkt.type   =  can_msg.id       & 0x0F;
-
-  if (sizeof(aim_pkt.data) != can_msg.dlc) return false;
-
-  memcpy(&aim_pkt.data, can_msg.data, can_msg.dlc);
-  return true;
-}
-
-bool AimCanDriver::transmit(const uint8_t* buf, size_t len) {
-  if (len != sizeof(aimPkt) || !_initialized) return false;
-
-  aimPkt pkt;
-  memcpy(&pkt, buf, sizeof(pkt));
-
-  AimStm32CanCore::Frame can_msg = {};
-  if (!packAimPkt(pkt, can_msg)) return false;
-
-  return _canCore.transmit(can_msg);
-}
-
-bool AimCanDriver::receive(uint8_t* buf, size_t len) {
-  if (len != sizeof(aimPkt) || !_initialized) return false;
-
-  AimStm32CanCore::Frame can_msg = {};
-  if (!_canCore.receive(can_msg)) return false;
-
-  aimPkt pkt;
-  if (!unpackAimPkt(can_msg, pkt)) return false;
-
-  memcpy(buf, &pkt, sizeof(pkt));
-  return true;
-}
-
-
-// ── ESP32 ────────────────────────────────────────────────────
+  AimStm32CanCore::Stats stats = {};
+  _canCore.getStats(stats);
+  LOG_ERROR(
+      "AimCanDriver fail op=%s org=%u id=0x%03X beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
+      op,
+      static_cast<unsigned>(_origin),
+      static_cast<unsigned>(canId),
+      0UL,
+      static_cast<unsigned long>(stats.txHalErrors),
+      static_cast<unsigned long>(stats.rxHalErrors),
+      static_cast<unsigned long>(stats.txQueueDrops),
+      0UL,
+      static_cast<unsigned long>(stats.busOffEvents),
+      static_cast<unsigned long>(stats.errorWarningEvents),
+      static_cast<unsigned long>(stats.errorPassiveEvents),
+      static_cast<unsigned long>(stats.lastHalError));
 #elif defined(ARDUINO_ARCH_ESP32)
+  AimEsp32CanCore::Stats stats = {};
+  _canCore.getStats(stats);
+  LOG_ERROR(
+      "AimCanDriver fail op=%s org=%u id=0x%03X beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
+      op,
+      static_cast<unsigned>(_origin),
+      static_cast<unsigned>(canId),
+      static_cast<unsigned long>(stats.beginErrors),
+      static_cast<unsigned long>(stats.txErrors),
+      static_cast<unsigned long>(stats.rxErrors),
+      0UL,
+      static_cast<unsigned long>(stats.filteredFrames),
+      0UL,
+      0UL,
+      0UL,
+      static_cast<unsigned long>(stats.lastError));
+#endif
+}
 
 void AimCanDriver::begin() {
-  _initialized = false;  // Reset in case begin() is called multiple times
-
-  twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)_txPin, (gpio_num_t)_rxPin, TWAI_MODE_NORMAL);
-  twai_timing_config_t t_config;
-  twai_filter_config_t f_config = {
-    .acceptance_code = ((uint32_t)(_origin & 0x07) << 5) | ((uint32_t)AIM_DEST_BROADCAST << 5),
-    .acceptance_mask = 0x0E0 | 0x0E0,  // Mask for dest bits [7:5]
-    .single_filter = false  // Use dual filter
-  };
-
-  // Set baud rate based on _baud (assuming common rates; adjust as needed)
-  if (_baud == 500000) {
-    t_config = TWAI_TIMING_CONFIG_500KBITS();
-  } else if (_baud == 250000) {
-    t_config = TWAI_TIMING_CONFIG_250KBITS();
-  } else if (_baud == 125000) {
-    t_config = TWAI_TIMING_CONFIG_125KBITS();
-  } else {
-    // Default to 500kbps
-    t_config = TWAI_TIMING_CONFIG_500KBITS();
+  if (_initialized) {
+    return;
   }
 
-  // Install TWAI driver
-  if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
-    if (twai_start() == ESP_OK) {
-      _initialized = true;
-    }
+  AIM_ASSERT((_origin & 0xF8U) == 0U);
+
+  if (!_canCore.setAcceptDest(_origin)) {
+    LOG_ERROR("AimCanDriver begin failed: invalid destination origin=%u", static_cast<unsigned>(_origin));
+    _initialized = false;
+    return;
   }
-}
 
-bool AimCanDriver::packAimPkt(const aimPkt& aim_pkt, twai_message_t& twai_msg) {
-  twai_msg.identifier = (((aim_pkt.origin & 0x07) << 8) |
-                        ((aim_pkt.dest   & 0x07) << 5) |
-                        ((aim_pkt.type   & 0x0F))) & 0x07FF;
-  twai_msg.extd = 0;  // Standard 11-bit ID
-  twai_msg.data_length_code = sizeof(aim_pkt.data);
-  if (twai_msg.data_length_code != 8) return false;
-
-  memcpy(twai_msg.data, &aim_pkt.data, sizeof(aim_pkt.data));
-  return true;
-}
-
-bool AimCanDriver::unpackAimPkt(const twai_message_t& twai_msg, aimPkt& aim_pkt) {
-  aim_pkt.origin = (twai_msg.identifier >> 8) & 0x07;
-  aim_pkt.dest   = (twai_msg.identifier >> 5) & 0x07;
-  aim_pkt.type   =  twai_msg.identifier       & 0x0F;
-
-  if (sizeof(aim_pkt.data) != twai_msg.data_length_code) return false;
-
-  memcpy(&aim_pkt.data, twai_msg.data, twai_msg.data_length_code);
-  return true;
+  _initialized = _canCore.begin();
+  if (!_initialized) {
+    logFailure(true);
+  }
 }
 
 bool AimCanDriver::transmit(const uint8_t* buf, size_t len) {
-  if (len != sizeof(aimPkt) || !_initialized) return false;
+  AIM_ASSERT((buf != nullptr) && (len == sizeof(aimPkt)));
+
+  if ((buf == nullptr) || (len != sizeof(aimPkt))) {
+    LOG_ERROR("AimCanDriver transmit failed: invalid buffer or size (%u)", static_cast<unsigned>(len));
+    return false;
+  }
+
+  if (!_initialized) {
+    LOG_ERROR("AimCanDriver transmit failed: driver not initialized");
+    return false;
+  }
 
   aimPkt pkt;
-  memcpy(&pkt, buf, sizeof(pkt));
+  (void)memcpy(&pkt, buf, sizeof(pkt));
 
-  twai_message_t twai_msg;
-  if (!packAimPkt(pkt, twai_msg)) return false;
+  CanCoreFrame can_msg = {};
+  if (!packAimPkt(pkt, can_msg)) {
+    LOG_ERROR("AimCanDriver transmit failed: packAimPkt rejected frame");
+    return false;
+  }
 
-  return twai_transmit(&twai_msg, pdMS_TO_TICKS(1000)) == ESP_OK; // switch function to non-blocking
+  const bool sent = _canCore.transmit(can_msg);
+  if (!sent) {
+    logFailure(false, can_msg.id);
+  }
 
+  return sent;
 }
 
 bool AimCanDriver::receive(uint8_t* buf, size_t len) {
-  if (len != sizeof(aimPkt) || !_initialized) return false;
+  AIM_ASSERT((buf != nullptr) && (len == sizeof(aimPkt)));
 
-  twai_message_t twai_msg;
-  if (twai_receive(&twai_msg, pdMS_TO_TICKS(1000)) != ESP_OK) return false; // switch function to non-blocking
+  if ((buf == nullptr) || (len != sizeof(aimPkt))) {
+    LOG_ERROR("AimCanDriver receive failed: invalid buffer or size (%u)", static_cast<unsigned>(len));
+    return false;
+  }
+
+  if (!_initialized) {
+    LOG_ERROR("AimCanDriver receive failed: driver not initialized");
+    return false;
+  }
+
+  CanCoreFrame can_msg = {};
+  if (!_canCore.receive(can_msg)) {
+    return false;
+  }
 
   aimPkt pkt;
-  if (!unpackAimPkt(twai_msg, pkt)) return false;
+  if (!unpackAimPkt(can_msg, pkt)) {
+    LOG_ERROR(
+        "AimCanDriver receive failed: unpack rejected id=0x%03X dlc=%u",
+        static_cast<unsigned>(can_msg.id),
+        static_cast<unsigned>(can_msg.dlc));
+    return false;
+  }
 
-  memcpy(buf, &pkt, sizeof(pkt));
+  (void)memcpy(buf, &pkt, sizeof(pkt));
   return true;
 }
-
-#endif

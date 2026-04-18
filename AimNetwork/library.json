@@ -1,6 +1,6 @@
 {
   "name": "AimNetwork",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Avionics Interconnected Module Network Library",
   "keywords": "can, avionics, network",
   "repository": {
@@ -18,5 +18,10 @@
     "ststm32",
     "espressif32"
   ],
-  "dependencies": []
+  "dependencies": [
+    {
+      "name": "Logger",
+      "version": "*"
+    }
+  ]
 }

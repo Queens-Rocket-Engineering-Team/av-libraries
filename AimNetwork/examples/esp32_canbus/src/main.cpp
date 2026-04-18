@@ -1,56 +1,213 @@
-// AimNetwork ESP32 CAN Example
-// Demonstrates sending and receiving packets on the AIM bus.
-// Copy this folder as a starting point for new ESP32 modules.
-//
-// ESP32 CAN support is currently in early stages and may not work all boards.
+#include "node.h"
 
-#include <Arduino.h>
-#include <aim_network.h>
-#include <aim_can_driver.h>
+#include <esp_idf_version.h>
+#include <esp_task_wdt.h>
+#include <logger.h>
+#include <SoftwareSerial.h>
 
-#define CAN_RX_PIN 0   // adjust to your board
-#define CAN_TX_PIN 0   // adjust to your board
-#define DB_LED_PIN 40
+static constexpr uint32_t kHeartbeatTxIntervalMs = 250U;
+static constexpr uint32_t kWatchdogTimeoutMs = 2000U;
+static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
+static constexpr uint8_t kTrackedNodeCount = 6U;
 
-AimCanDriver canHw(AIM_ORG_UPROP, 500000, CAN_RX_PIN, CAN_TX_PIN);
-AimNetwork   aim(&canHw, AIM_ORG_UPROP);
+static_assert(kHeartbeatTxIntervalMs > 0U, "Heartbeat interval must be > 0");
+static_assert(kWatchdogTimeoutMs > 0U, "Watchdog timeout must be > 0");
+static_assert(kMaxRxFramesPerLoop > 0U, "RX frame budget must be > 0");
+static_assert(kTrackedNodeCount > 0U, "Tracked node count must be > 0");
+static_assert(NODE_HEALTH_TIMEOUT_MS > 0U, "Health timeout must be > 0");
 
-aimPkt rxPkt;
+static const uint8_t kTrackedNodeOrigins[kTrackedNodeCount] = {
+  AIM_ORG_COMMS,
+  AIM_ORG_UPROP,
+  AIM_ORG_LPROP,
+  AIM_ORG_ALT,
+  AIM_ORG_GPS,
+  AIM_ORG_PWR
+};
 
-const uint32_t TX_INTERVAL = 1000;
-uint32_t lastTx = 0;
-uint32_t txCount = 0;
+static AimCanDriver g_canHw(NODE_ORIGIN, NODE_CAN_BAUD, NODE_CAN_RX_PIN, NODE_CAN_TX_PIN);
+static AimNetwork g_aim(&g_canHw, NODE_ORIGIN);
+static NodeState g_nodeState = INIT;
+static AimNodeHealth g_nodeHealth[kTrackedNodeCount] = {};
+static bool g_lastAliveSnapshot[kTrackedNodeCount] = {};
+static uint32_t g_lastHeartbeatTxMs = 0U;
+static bool g_watchdogReady = false;
+static SoftwareSerial g_serial(NODE_SERIAL_RX_PIN, NODE_SERIAL_TX_PIN);
+static Logger g_log(g_serial, NODE_ORIGIN, LogLevel::INFO);
 
+void init_watchdog(void) {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  const esp_task_wdt_config_t config = {
+    .timeout_ms = kWatchdogTimeoutMs,
+    .idle_core_mask = 0,
+    .trigger_panic = true
+  };
+  const esp_err_t initStatus = esp_task_wdt_init(&config);
+#else
+  const esp_err_t initStatus = esp_task_wdt_init(kWatchdogTimeoutMs / 1000U, true);
+#endif
 
-void setup() {
-  Serial.begin(9600);
-  pinMode(DB_LED_PIN, OUTPUT);
-  aim.begin();
-  delay(1000);
-  Serial.println("ESP32 CAN ALIVE");
+  const bool initOk = (initStatus == ESP_OK) || (initStatus == ESP_ERR_INVALID_STATE);
+  const esp_err_t addStatus = esp_task_wdt_add(NULL);
+  const bool addOk = (addStatus == ESP_OK) || (addStatus == ESP_ERR_INVALID_STATE);
+  g_watchdogReady = initOk && addOk;
+  if (!g_watchdogReady) {
+    LOG_ERROR("Watchdog init failed (init=%d add=%d)", static_cast<int>(initStatus), static_cast<int>(addStatus));
+    g_nodeState = FAULT;
+    return;
+  }
+
+  LOG_INFO("Watchdog ready");
 }
 
-
-void loop() {
-  Serial.println("ESP32 CAN ALIVE");
-  // while (aim.readPkt(rxPkt)) { // currently blocking due to TWAI driver limitations; consider switching to non-blocking receive
-  //   aimPrintPkt(Serial, rxPkt, "RX");
-  // }
-
-  if (aim.syncedMillis() - lastTx > TX_INTERVAL) {
-    lastTx = aim.syncedMillis();
-    aimPkt txPkt;
-    Serial.println("Building packet...");
-    txPkt.origin = AIM_ORG_GPS;
-    txPkt.dest   = AIM_DEST_BROADCAST;
-    txPkt.type   = AIM_TYP_TIME;
-    Serial.println("packing packet...");
-    txPkt.data   = aimPkt::packData(aim.syncedMillis(), txCount);
-    Serial.println("sending packet...");
-    aim.sendPkt(aim.syncedMillis(), txCount, AIM_DEST_COMMS, AIM_TYP_PT1);
-    Serial.println("printing packet...");
-    aimPrintPkt(Serial, txPkt, "TX");
-    digitalWrite(DB_LED_PIN, !digitalRead(DB_LED_PIN));
-    txCount++;
+void kick_watchdog(void) {
+  if (!g_watchdogReady) {
+    return;
   }
+
+  const esp_err_t status = esp_task_wdt_reset();
+  if ((status != ESP_OK) && (status != ESP_ERR_INVALID_STATE)) {
+    LOG_ERROR("Watchdog reset failed (%d)", static_cast<int>(status));
+    g_nodeState = FAULT;
+  }
+}
+
+void init_node_health(uint32_t nowMs) {
+  if (NODE_ENABLE_HEALTH_MONITOR == 0U) {
+    LOG_INFO("Node-health monitor disabled");
+    return;
+  }
+
+  const bool configured = g_aim.configureHealthMonitor(
+      kTrackedNodeOrigins,
+      kTrackedNodeCount,
+      g_nodeHealth,
+      NODE_HEALTH_TIMEOUT_MS,
+      nowMs);
+  AIM_ASSERT(configured);
+
+  for (uint8_t i = 0U; i < kTrackedNodeCount; i++) {
+    g_lastAliveSnapshot[i] = g_nodeHealth[i].alive;
+  }
+
+  LOG_INFO("Node-health monitor enabled (%u tracked)", static_cast<unsigned>(kTrackedNodeCount));
+}
+
+void service_can_rx(uint32_t nowMs) {
+  // Handle incoming bus messages and custom packet branches here.
+  for (uint8_t i = 0U; i < kMaxRxFramesPerLoop; i++) {
+    aimPkt pkt = {};
+    if (!g_aim.readPkt(pkt)) {
+      break;
+    }
+
+    if (pkt.type == AIM_TYP_TIME) {
+      g_aim.syncTime(pkt.getMillis());
+    }
+    if (pkt.type == AIM_TYP_HEARTBEAT) {
+      g_aim.updateHealthOnHeartbeat(pkt.origin, nowMs);
+    }
+  }
+}
+
+void service_node_health_monitor(uint32_t nowMs) {
+  if (NODE_ENABLE_HEALTH_MONITOR == 0U) {
+    return;
+  }
+
+  g_aim.evaluateHealth(nowMs);
+  for (uint8_t i = 0U; i < kTrackedNodeCount; i++) {
+    const AimNodeHealth& health = g_nodeHealth[i];
+    const uint8_t origin = health.origin;
+    if (origin == NODE_ORIGIN) {
+      continue;
+    }
+
+    if (health.alive == g_lastAliveSnapshot[i]) {
+      continue;
+    }
+
+    g_lastAliveSnapshot[i] = health.alive;
+    if (health.alive) {
+      LOG_INFO("Node %u is ALIVE", static_cast<unsigned>(origin));
+    } else {
+      LOG_WARN("Node %u is MISSING", static_cast<unsigned>(origin));
+    }
+  }
+}
+
+void service_tx(void) {
+  // Add periodic transmit-side behavior in this service pattern.
+  const uint32_t scheduleNowMs = millis();
+  if ((scheduleNowMs - g_lastHeartbeatTxMs) < kHeartbeatTxIntervalMs) {
+    return;
+  }
+
+  g_lastHeartbeatTxMs = scheduleNowMs;
+  const uint32_t networkNowMs = g_aim.syncedMillis();
+  const uint32_t payload = static_cast<uint32_t>(g_nodeState) & 0xFFU;
+  const bool sent = g_aim.sendPkt(networkNowMs, payload, AIM_DEST_BROADCAST, AIM_TYP_HEARTBEAT);
+  if (!sent) {
+    LOG_ERROR("Heartbeat TX failed");
+  } else {
+    LOG_DEBUG("Heartbeat TX ok");
+  }
+}
+
+void run_state_machine(uint32_t nowMs) {
+  if (g_nodeState > FAULT) {
+    g_nodeState = FAULT;
+  }
+
+  AIM_ASSERT(g_nodeState <= FAULT);
+  if (g_nodeState == INIT) {
+    board_init();
+    g_lastHeartbeatTxMs = millis();
+    g_nodeState = OPERATIONAL;
+    LOG_INFO("State transition INIT -> OPERATIONAL");
+    return;
+  }
+
+  board_update(nowMs, g_nodeState);
+}
+
+void board_init(void) {
+  AIM_ASSERT((NODE_ORIGIN & 0xF8U) == 0U);
+  // BOARD EXTENSION POINT: add one-time board setup here.
+}
+
+void board_update(uint32_t nowMs, NodeState state) {
+  AIM_ASSERT(state <= FAULT);
+  (void)nowMs;
+  (void)state;
+  // BOARD EXTENSION POINT: add recurring board logic here.
+}
+
+void setup(void) {
+  AIM_ASSERT((NODE_ORIGIN & 0xF8U) == 0U);
+  g_serial.begin(NODE_SERIAL_BAUD);
+  g_logger = &g_log;
+  LOG_INFO("Boot node origin=%u", static_cast<unsigned>(NODE_ORIGIN));
+  init_watchdog();
+  g_aim.begin();
+
+  const uint32_t networkNowMs = g_aim.syncedMillis();
+  init_node_health(networkNowMs);
+  g_lastHeartbeatTxMs = millis();
+  if (g_nodeState != FAULT) {
+    g_nodeState = INIT;
+  }
+}
+
+void loop(void) {
+  AIM_ASSERT(g_nodeState <= FAULT);
+
+  const uint32_t nowMs = g_aim.syncedMillis();
+  // Main scheduler order: RX, monitors/services, TX, state machine, watchdog.
+  service_can_rx(nowMs);
+  service_node_health_monitor(nowMs);
+  service_tx();
+  run_state_machine(nowMs);
+
+  kick_watchdog();
 }

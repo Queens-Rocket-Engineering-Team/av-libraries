@@ -2,6 +2,7 @@
 #define AIM_STM32_CAN_CORE_H
 
 #include "aim_network.h"
+#include "aim_safety.h"
 
 #if defined(ARDUINO_ARCH_STM32)
 
@@ -36,8 +37,10 @@
 #include <cstddef>
 #include <cstdint>
 
-#ifndef AIM_ASSERT
-#define AIM_ASSERT(cond) do { if (!(cond)) { for (;;) { } } } while (0)
+#if defined(CAN1)
+#define AIM_STM32_DEFAULT_CANBUS CAN1
+#else
+#define AIM_STM32_DEFAULT_CANBUS nullptr
 #endif
 
 class AimStm32CanCore {
@@ -48,11 +51,35 @@ public:
     uint8_t data[8];
   };
 
-  AimStm32CanCore(uint8_t origin, uint32_t baud);
+  struct Stats {
+    uint32_t txFrames;
+    uint32_t rxFrames;
+    uint32_t txQueueDrops;
+    uint32_t rxQueueDrops;
+    uint32_t txHalErrors;
+    uint32_t rxHalErrors;
+    uint32_t busOffEvents;
+    uint32_t errorWarningEvents;
+    uint32_t errorPassiveEvents;
+    uint32_t lastHalError;
+  };
+
+  AimStm32CanCore(uint32_t baud,
+                  CAN_TypeDef* canbus = AIM_STM32_DEFAULT_CANBUS);
+
+  bool setAcceptDest(uint8_t dest);
 
   bool begin();
   bool transmit(const Frame& frame);
   bool receive(Frame& frame);
+
+  void getStats(Stats& stats) const;
+  void clearStats();
+
+  // These hooks are intended for HAL interrupt callbacks.
+  void onRxInterrupt();
+  void onTxInterrupt();
+  void onErrorInterrupt();
 
 private:
   static constexpr uint8_t kTxQueueSize = 16U;
@@ -66,9 +93,15 @@ private:
   bool pollRx();
   bool configureFilter();
   bool configureTiming();
+  bool validateCanBus() const;
+  void updateErrorTelemetry();
 
-  uint8_t _origin;
+  static uint32_t enterCritical();
+  static void exitCritical(uint32_t primask);
+
+  uint8_t _acceptDest;
   uint32_t _baud;
+  CAN_TypeDef* _canbus;
   bool _initialized;
 
   Frame _txQueue[kTxQueueSize];
@@ -81,8 +114,13 @@ private:
   uint8_t _rxTail;
   uint8_t _rxCount;
 
-  static CAN_HandleTypeDef _hcan;
+  Stats _stats;
+  uint32_t _lastErrorFlags;
+
+  CAN_HandleTypeDef _hcan;
 };
+
+#undef AIM_STM32_DEFAULT_CANBUS
 
 #endif  // ARDUINO_ARCH_STM32
 
