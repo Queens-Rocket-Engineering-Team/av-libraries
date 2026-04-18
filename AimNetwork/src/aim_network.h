@@ -35,7 +35,7 @@
 #define AIM_TYP_GPS_LONG  0x8
 #define AIM_TYP_ALT       0x9
 #define AIM_TYP_LOWPW     0xA
-#define AIM_TYP_WATCHDOG  0xB
+#define AIM_TYP_HEARTBEAT 0xB
 #define AIM_TYP_NODATA    0xE
 #define AIM_TYP_UNDEFINED 0xF
 
@@ -79,14 +79,12 @@ inline void aimPrintPkt(Stream& out, const aimPkt& pkt, const char* label = "") 
   out.println("ms");
 }
 
+class AimCanDriver;
 
-// ── Hardware interface ───────────────────────────────────────
-
-class AimTransceiver {
-public:
-  virtual bool transmit(const uint8_t* buf, size_t len) = 0;
-  virtual bool receive(uint8_t* buf, size_t len) = 0;
-  virtual void begin() = 0;
+struct AimNodeHealth {
+  uint8_t origin;
+  uint32_t lastHeartbeatMs;
+  bool alive;
 };
 
 
@@ -94,49 +92,53 @@ public:
 
 class AimNetwork {
 public:
-  AimNetwork(AimTransceiver* hardware, uint8_t origin)
-      : _hw(hardware), _origin(origin), _timeOffset(0) {}
+  AimNetwork(AimCanDriver* hardware, uint8_t origin);
 
-  void begin() { _hw->begin(); }
+  void begin();
 
   // Send a pre-built packet
-  bool sendPkt(const aimPkt& pkt) {
-    return _hw->transmit((const uint8_t*)&pkt, sizeof(aimPkt));
-  }
+  bool sendPkt(const aimPkt& pkt);
 
   // Send with raw data field
-  bool sendPkt(uint64_t data, uint8_t dest, uint8_t type) {
-    aimPkt pkt;
-    pkt.origin = _origin;
-    pkt.dest   = dest;
-    pkt.type   = type;
-    pkt.data   = data;
-    return sendPkt(pkt);
-  }
+  bool sendPkt(uint64_t data, uint8_t dest, uint8_t type);
 
   // Send with millis + payload (packs data for you)
-  bool sendPkt(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type) {
-    return sendPkt(aimPkt::packData(ms, payload), dest, type);
-  }
+  bool sendPkt(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
 
-  bool readPkt(aimPkt& pkt) {
-    return _hw->receive((uint8_t*)&pkt, sizeof(aimPkt));
-  }
+  bool readPkt(aimPkt& pkt);
 
   // Time sync — call when receiving a TIME packet
-  void syncTime(uint32_t remoteMillis) {
-    _timeOffset = (int32_t)remoteMillis - (int32_t)millis();
-  }
+  void syncTime(uint32_t remoteMillis);
 
-  // Returns millis() adjusted by the last sync offset
-  uint32_t syncedMillis() const { return millis() + _timeOffset; }
+  // Optional node-health monitor.
+  // Caller owns trackedOrigins/healthStorage memory and lifetime.
+  // Initializes monitor state for tracked nodes at nowMs.
+  bool configureHealthMonitor(const uint8_t* trackedOrigins,
+                              uint8_t trackedCount,
+                              AimNodeHealth* healthStorage,
+                              uint32_t heartbeatTimeoutMs,
+                              uint32_t nowMs);
 
-  int32_t getTimeOffset() const { return _timeOffset; }
+  void updateHealthOnHeartbeat(uint8_t origin, uint32_t nowMs);
+  void evaluateHealth(uint32_t nowMs);
+  const AimNodeHealth* getHealthForOrigin(uint8_t origin) const;
+
+  // Returns local time adjusted by the last sync offset
+  uint32_t syncedMillis() const;
+
+  int32_t getTimeOffset() const;
 
 private:
-  AimTransceiver* _hw;
+  int16_t findHealthIndex(uint8_t origin) const;
+
+  AimCanDriver* _hw;
   uint8_t _origin;
   int32_t _timeOffset;
+
+  const uint8_t* _trackedOrigins;
+  uint8_t _trackedCount;
+  AimNodeHealth* _healthTable;
+  uint32_t _heartbeatTimeoutMs;
 };
 
 #endif // AIM_NETWORK_H

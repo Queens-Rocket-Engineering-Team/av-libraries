@@ -207,8 +207,8 @@ class RDESCompressor():
 		"""
 
 		LVL_1_MAX = (2**5)-1 # Lvl1 = 5 bits
-		LVL_2_MAX = (2**12)-1 # Lvl2 = 12 bits
-		LVL_3_MAX = (2**20)-1 # Lvl3 = 20 bits
+		LVL_2_MAX = (2**13)-1 # Lvl2 = 13 bits
+		LVL_3_MAX = (2**21)-1 # Lvl3 = 21 bits
 
 		## Loop over each column in this row
 		for i in range(self.__numCols):

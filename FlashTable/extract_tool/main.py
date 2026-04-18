@@ -20,7 +20,7 @@ import datetime
 from rdes import RDESDecompressor
 import csv
 
-BAUD_RATE = 38400
+
 BAUD_RATE = 115200
 
 

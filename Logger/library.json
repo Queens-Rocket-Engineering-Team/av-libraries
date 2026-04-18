@@ -1,8 +1,8 @@
 {
-  "name": "AimNetwork",
-  "version": "0.3.0",
-  "description": "Avionics Interconnected Module Network Library",
-  "keywords": "can, avionics, network",
+  "name": "Logger",
+  "version": "0.1.0",
+  "description": "Lightweight Arduino logging library for QRET modules",
+  "keywords": "logger, logging, serial, avionics",
   "repository": {
     "type": "git",
     "url": "https://github.com/Queens-Rocket-Engineering-Team/av-libraries.git"
@@ -18,10 +18,5 @@
     "ststm32",
     "espressif32"
   ],
-  "dependencies": [
-    {
-      "name": "Logger",
-      "version": "*"
-    }
-  ]
+  "dependencies": []
 }

@@ -1,8 +1,8 @@
 {
-  "name": "AimNetwork",
-  "version": "0.3.0",
-  "description": "Avionics Interconnected Module Network Library",
-  "keywords": "can, avionics, network",
+  "name": "FlashTable",
+  "version": "0.1.0",
+  "description": "Flash Storage and Compression Library",
+  "keywords": "flash, storage, logging",
   "repository": {
     "type": "git",
     "url": "https://github.com/Queens-Rocket-Engineering-Team/av-libraries.git"
@@ -20,7 +20,8 @@
   ],
   "dependencies": [
     {
-      "name": "Logger",
+      "owner": "paulstoffregen",
+      "name": "SerialFlash",
       "version": "*"
     }
   ]
