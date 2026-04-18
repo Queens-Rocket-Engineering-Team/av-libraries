@@ -46,9 +46,26 @@
 #define AIM_DEST_ADDR_SIZE 3
 #define AIM_TYP_ADDR_SIZE  4
 
+#define AIM_ORG_ADDR_MAX   ((1U << AIM_ORG_ADDR_SIZE) - 1U)
+#define AIM_DEST_ADDR_MAX  ((1U << AIM_DEST_ADDR_SIZE) - 1U)
+#define AIM_TYP_ADDR_MAX   ((1U << AIM_TYP_ADDR_SIZE) - 1U)
+
+
+// ── Timed data layout constants (for downstream validation) ──
+
+#define AIM_PKT_TIMED_MILLIS_BITS    27
+#define AIM_PKT_TIMED_PAYLOAD_BITS   32
+#define AIM_PKT_RAW_PAYLOAD_BITS     64
+
+#define AIM_PKT_TIMED_MILLIS_MAX     ((1UL << AIM_PKT_TIMED_MILLIS_BITS) - 1UL)
+#define AIM_PKT_TIMED_PAYLOAD_MAX    ((1ULL << AIM_PKT_TIMED_PAYLOAD_BITS) - 1ULL)
+
+#define AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS 5000U
+
 
 // ── AIM Packet ───────────────────────────────────────────────
-// Data field: upper 27 bits = timestamp (ms), lower 24 bits = payload
+// Data field (timed format): upper 5 bits reserved, next 27 bits = timestamp (ms), lower 32 bits = payload
+// Data field (raw format): entire 64 bits are payload
 
 typedef struct aimPkt {
   uint8_t  padding : 5;
@@ -57,12 +74,15 @@ typedef struct aimPkt {
   uint8_t  type    : AIM_TYP_ADDR_SIZE;
   uint64_t data;
 
-  uint32_t getMillis()  const { return (uint32_t)((data >> 24) & 0x7FFFFFF); }
-  uint32_t getPayload() const { return (uint32_t)(data & 0xFFFFFF); }
+  uint32_t getMillis()  const { return (uint32_t)((data >> AIM_PKT_TIMED_PAYLOAD_BITS) & (uint64_t)AIM_PKT_TIMED_MILLIS_MAX); }
+  uint32_t getPayload() const { return (uint32_t)(data & (uint64_t)AIM_PKT_TIMED_PAYLOAD_MAX); }
+  uint64_t getPayload64() const { return data; }
 
   static uint64_t packData(uint32_t ms, uint32_t payload) {
-    return (((uint64_t)ms & 0x7FFFFFFull) << 24) | ((uint64_t)payload & 0xFFFFFFull);
+    return (((uint64_t)ms & (uint64_t)AIM_PKT_TIMED_MILLIS_MAX) << AIM_PKT_TIMED_PAYLOAD_BITS) |
+           ((uint64_t)payload & (uint64_t)AIM_PKT_TIMED_PAYLOAD_MAX);
   }
+
 } aimPkt;
 
 
@@ -99,11 +119,11 @@ public:
   // Send a pre-built packet
   bool sendPkt(const aimPkt& pkt);
 
-  // Send with raw data field
-  bool sendPkt(uint64_t data, uint8_t dest, uint8_t type);
+  // Send with raw 64-bit data field
+  bool sendPkt64(uint64_t data, uint8_t dest, uint8_t type);
 
   // Send with millis + payload (packs data for you)
-  bool sendPkt(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
+  bool sendPkt32(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
 
   bool readPkt(aimPkt& pkt);
 
@@ -129,6 +149,7 @@ public:
   int32_t getTimeOffset() const;
 
 private:
+  bool isSendFieldsValid(uint8_t dest, uint8_t type) const;
   int16_t findHealthIndex(uint8_t origin) const;
 
   AimCanDriver* _hw;

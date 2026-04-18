@@ -19,6 +19,17 @@ void AimNetwork::begin() {
   }
 }
 
+bool AimNetwork::isSendFieldsValid(uint8_t dest, uint8_t type) const {
+  if ((dest > AIM_DEST_ADDR_MAX) || (type > AIM_TYP_ADDR_MAX)) {
+    LOG_ERROR("AimNetwork send failed: invalid dest/type (dest=0x%02X type=0x%02X)",
+              static_cast<unsigned int>(dest),
+              static_cast<unsigned int>(type));
+    return false;
+  }
+
+  return true;
+}
+
 bool AimNetwork::sendPkt(const aimPkt& pkt) {
   if (_hw == nullptr) {
     LOG_ERROR("AimNetwork sendPkt failed: hardware driver is null");
@@ -32,7 +43,11 @@ bool AimNetwork::sendPkt(const aimPkt& pkt) {
   return sent;
 }
 
-bool AimNetwork::sendPkt(uint64_t data, uint8_t dest, uint8_t type) {
+bool AimNetwork::sendPkt64(uint64_t data, uint8_t dest, uint8_t type) {
+  if (!isSendFieldsValid(dest, type)) {
+    return false;
+  }
+
   aimPkt pkt = {};
   pkt.origin = _origin;
   pkt.dest = dest;
@@ -41,8 +56,19 @@ bool AimNetwork::sendPkt(uint64_t data, uint8_t dest, uint8_t type) {
   return sendPkt(pkt);
 }
 
-bool AimNetwork::sendPkt(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type) {
-  return sendPkt(aimPkt::packData(ms, payload), dest, type);
+bool AimNetwork::sendPkt32(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type) {
+  if (!isSendFieldsValid(dest, type)) {
+    return false;
+  }
+
+  if (ms > AIM_PKT_TIMED_MILLIS_MAX) {
+    LOG_ERROR("AimNetwork sendPkt32 failed: ms exceeds %lu (ms=%lu)",
+              static_cast<unsigned long>(AIM_PKT_TIMED_MILLIS_MAX),
+              static_cast<unsigned long>(ms));
+    return false;
+  }
+
+  return sendPkt64(aimPkt::packData(ms, payload), dest, type);
 }
 
 bool AimNetwork::readPkt(aimPkt& pkt) {
@@ -72,7 +98,7 @@ bool AimNetwork::configureHealthMonitor(const uint8_t* trackedOrigins,
   }
 
   for (uint8_t i = 0U; i < trackedCount; i++) {
-    if ((trackedOrigins[i] & 0xF8U) != 0U) {
+    if (trackedOrigins[i] > AIM_ORG_ADDR_MAX) {
       LOG_ERROR("AimNetwork configureHealthMonitor failed: tracked origin out of range");
       return false;
     }
@@ -117,7 +143,7 @@ void AimNetwork::updateHealthOnHeartbeat(uint8_t origin, uint32_t nowMs) {
     return;
   }
 
-  if ((origin & 0xF8U) != 0U) {
+  if (origin > AIM_ORG_ADDR_MAX) {
     return;
   }
 
@@ -158,7 +184,7 @@ void AimNetwork::evaluateHealth(uint32_t nowMs) {
 }
 
 const AimNodeHealth* AimNetwork::getHealthForOrigin(uint8_t origin) const {
-  if ((_trackedOrigins == nullptr) || (_trackedCount == 0U) || (_healthTable == nullptr) || (_heartbeatTimeoutMs == 0U) || ((origin & 0xF8U) != 0U)) {
+  if ((_trackedOrigins == nullptr) || (_trackedCount == 0U) || (_healthTable == nullptr) || (_heartbeatTimeoutMs == 0U) || (origin > AIM_ORG_ADDR_MAX)) {
     return nullptr;
   }
 
