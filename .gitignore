@@ -1,47 +1,5 @@
-# For PCBs designed using KiCad: https://www.kicad.org/
-# Format documentation: https://kicad.org/help/file-formats/
-
-*.json
-
-# Temporary files
-*.000
-*.bak
-*.bck
-*.kicad_pcb-bak
-*.kicad_sch-bak
-*-backups
-*.kicad_prl
-*.sch-bak
-*~
-_autosave-*
+*.pio
 *.tmp
-*-save.pro
-*-save.kicad_pcb
-fp-info-cache
-
-# Netlist files (exported from Eeschema)
-*.net
-
-# Autorouter files (exported from Pcbnew)
-*.dsn
-*.ses
-
-# Exported BOM files
-*.xml
-
-
-## Changes below were stolen from Oak - if something breaks its ALL his fault and not Kennan's :) 
-
-# Weird file Mac computers make for no reason
-.DS_Store
-
-# .lck files - KiCad creates a .lck (lock) file when you open a schematic/layout that prevents anyone else from opening it up unless the file is deleted
-# It is usually deleted when you close the schematic/pcb, but it you stage and commit while the file is still open then you end up commiting the file
-# p.s. I tested this on a new local branch first and everything was fine
-*.lck
-
-# this file that gets generated but is only needed locally for crash recovery type things
-\#auto_saved_files\#
 
 #vscode config
 *.vscode
