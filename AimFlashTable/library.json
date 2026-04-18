@@ -1,8 +1,8 @@
 {
-  "name": "Logger",
+  "name": "AimFlashTable",
   "version": "0.1.0",
-  "description": "Lightweight Arduino logging library for QRET modules",
-  "keywords": "logger, logging, serial, avionics",
+  "description": "Flash Storage and Compression Library",
+  "keywords": "flash, storage, logging",
   "repository": {
     "type": "git",
     "url": "https://github.com/Queens-Rocket-Engineering-Team/av-libraries.git"
@@ -18,5 +18,11 @@
     "ststm32",
     "espressif32"
   ],
-  "dependencies": []
+  "dependencies": [
+    {
+      "owner": "paulstoffregen",
+      "name": "SerialFlash",
+      "version": "*"
+    }
+  ]
 }

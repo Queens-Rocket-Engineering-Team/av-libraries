@@ -20,7 +20,8 @@
   ],
   "dependencies": [
     {
-      "name": "Logger",
+      "owner": "Queens-Rocket-Engineering-Team",
+      "name": "AimLogger",
       "version": "*"
     }
   ]
