@@ -15,9 +15,14 @@ const char* Logger::levelToString(LogLevel level)
     }
 }
 
+bool Logger::shouldLog(LogLevel level) const
+{
+    return (filterMask() & static_cast<uint8_t>(level)) != 0U;
+}
+
 void Logger::log(LogLevel level, const char* fmt, ...)
 {
-    if ((output_ == nullptr) || (level < level_) || (fmt == nullptr))
+    if ((output_ == nullptr) || !shouldLog(level) || (fmt == nullptr))
     {
         return;
     }

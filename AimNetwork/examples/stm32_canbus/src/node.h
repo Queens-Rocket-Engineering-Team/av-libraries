@@ -14,11 +14,7 @@
 
 #define NODE_CAN_BAUD 500000U
 
-#if defined(CAN1)
 #define NODE_CAN_BUS CAN1
-#else
-#error "Define NODE_CAN_BUS for this STM32 target."
-#endif
 
 #define NODE_SERIAL_RX_PIN PA10
 #define NODE_SERIAL_TX_PIN PA9

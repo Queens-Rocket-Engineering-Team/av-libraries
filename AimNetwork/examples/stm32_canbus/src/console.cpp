@@ -4,26 +4,24 @@
 
 #include "node.h"
 
-#include <logger.h>
-#include <flash_table.h>
 #include <aim_network.h>
+#include <flash_table.h>
+#include <logger.h>
 
 static constexpr uint16_t kFlashDumpLineBytes = 16U;
-static constexpr uint32_t kFlashDumpMaxBytes  = 512U;
+static constexpr uint32_t kFlashDumpMaxBytes = 512U;
 
 enum ConsoleMenu : uint8_t {
   CONSOLE_MENU_ROOT      = 0U,
-  CONSOLE_MENU_LOG_LEVEL = 1U,
+  CONSOLE_MENU_LOG_MASK  = 1U,
   CONSOLE_MENU_FLASH     = 2U
 };
 
-static Stream*     s_serial = nullptr;
-static AimNetwork* s_aim    = nullptr;
-static Logger*     s_log    = nullptr;
-static FlashTable* s_flash  = nullptr;
-static ConsoleMenu s_menu   = CONSOLE_MENU_ROOT;
-
-// ── Internal helpers ─────────────────────────────────────────
+static Stream* s_serial = nullptr;
+static AimNetwork* s_aim = nullptr;
+static Logger* s_log = nullptr;
+static FlashTable* s_flash = nullptr;
+static ConsoleMenu s_menu = CONSOLE_MENU_ROOT;
 
 static int readChar(void) {
   AIM_ASSERT(s_serial != nullptr);
@@ -45,6 +43,7 @@ static int readChar(void) {
   if ((c == '\n') || (c == '\r') || (c == ' ') || (c == '\t')) {
     return -1;
   }
+
   return static_cast<int>(c);
 }
 
@@ -57,9 +56,10 @@ static void showMenu(ConsoleMenu menu) {
       s_serial->println("DEBUG: q exit | b back");
       s_serial->println("1 status | 2 log | 3 flash");
       break;
-    case CONSOLE_MENU_LOG_LEVEL:
-      s_serial->println("LOG: q exit | b back");
-      s_serial->println("1 DEBUG | 2 INFO | 3 WARN | 4 ERROR");
+    case CONSOLE_MENU_LOG_MASK:
+      s_serial->println("LOG mask: q exit | b back");
+      s_serial->println("1 DEBUG only | 2 INFO only | 3 WARN only | 4 ERROR only");
+      s_serial->println("5 all | 6 INFO/WARN/ERROR");
       break;
     case CONSOLE_MENU_FLASH:
       s_serial->println("FLASH: q exit | b back");
@@ -82,8 +82,8 @@ static void printStatus(uint8_t currentState, uint32_t networkNowMs) {
   s_serial->print(NODE_NAME);
   s_serial->print(" state=");
   s_serial->print(static_cast<unsigned>(currentState));
-  s_serial->print(" log=");
-  s_serial->print(static_cast<unsigned>(s_log->level()));
+  s_serial->print(" logMask=0x");
+  s_serial->print(static_cast<unsigned>(s_log->filterMask()), HEX);
   s_serial->print(" nowMs=");
   s_serial->print(static_cast<unsigned long>(networkNowMs));
   s_serial->print(" offset=");
@@ -103,17 +103,27 @@ static void printState(uint8_t state) {
   s_serial->println(static_cast<unsigned>(state));
 }
 
-// ── Public API ───────────────────────────────────────────────
+static void setLogMask(uint8_t mask, const char* label) {
+  AIM_ASSERT(s_serial != nullptr);
+  AIM_ASSERT(s_log != nullptr);
+
+  s_log->setFilterMask(mask);
+  s_serial->print("log mask=0x");
+  s_serial->print(static_cast<unsigned>(s_log->filterMask()), HEX);
+  s_serial->print(" (");
+  s_serial->print(label);
+  s_serial->println(")");
+}
 
 void consoleInit(Stream& serial,
                  AimNetwork& aim,
                  Logger& log,
                  FlashTable& flash) {
   s_serial = &serial;
-  s_aim    = &aim;
-  s_log    = &log;
-  s_flash  = &flash;
-  s_menu   = CONSOLE_MENU_ROOT;
+  s_aim = &aim;
+  s_log = &log;
+  s_flash = &flash;
+  s_menu = CONSOLE_MENU_ROOT;
 }
 
 ConsoleAction consoleCheckEntry(void) {
@@ -137,7 +147,7 @@ ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs) {
     if (r != FLASHTABLE_SERVICE_ACTIVE) {
       s_serial->println(r == FLASHTABLE_SERVICE_DONE ? "flash erase done" : "flash erase error");
       showMenu(CONSOLE_MENU_FLASH);
-      eraseActive = false;  // re-evaluate: allow 'q' in the same iteration
+      eraseActive = false;
     }
   }
 
@@ -163,7 +173,7 @@ ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs) {
           printStatus(currentState, networkNowMs);
           break;
         case '2':
-          showMenu(CONSOLE_MENU_LOG_LEVEL);
+          showMenu(CONSOLE_MENU_LOG_MASK);
           break;
         case '3':
           showMenu(CONSOLE_MENU_FLASH);
@@ -173,16 +183,39 @@ ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs) {
       }
       break;
 
-    case CONSOLE_MENU_LOG_LEVEL:
+    case CONSOLE_MENU_LOG_MASK:
       if (c == 'b') {
         showMenu(CONSOLE_MENU_ROOT);
         break;
       }
-      if ((c >= '1') && (c <= '4')) {
-        const LogLevel level = static_cast<LogLevel>(static_cast<uint8_t>(c - '1'));
-        s_log->setLevel(level);
-        s_serial->print("log=");
-        s_serial->println(static_cast<unsigned>(level));
+      switch (c) {
+        case '1':
+          setLogMask(static_cast<uint8_t>(LogLevel::DEBUG), "DEBUG only");
+          break;
+        case '2':
+          setLogMask(static_cast<uint8_t>(LogLevel::INFO), "INFO only");
+          break;
+        case '3':
+          setLogMask(static_cast<uint8_t>(LogLevel::WARN), "WARN only");
+          break;
+        case '4':
+          setLogMask(static_cast<uint8_t>(LogLevel::ERROR), "ERROR only");
+          break;
+        case '5':
+          setLogMask(static_cast<uint8_t>(LogLevel::DEBUG) |
+                     static_cast<uint8_t>(LogLevel::INFO) |
+                     static_cast<uint8_t>(LogLevel::WARN) |
+                     static_cast<uint8_t>(LogLevel::ERROR),
+                     "DEBUG/INFO/WARN/ERROR");
+          break;
+        case '6':
+          setLogMask(static_cast<uint8_t>(LogLevel::INFO) |
+                     static_cast<uint8_t>(LogLevel::WARN) |
+                     static_cast<uint8_t>(LogLevel::ERROR),
+                     "INFO/WARN/ERROR");
+          break;
+        default:
+          break;
       }
       break;
 
@@ -237,7 +270,7 @@ ConsoleAction consoleServiceFlashDump(void) {
   if (r != FLASHTABLE_SERVICE_ACTIVE) {
     static const char* const kDumpMsg[] = {
       "flash dump idle",
-      nullptr,  // FLASHTABLE_SERVICE_ACTIVE is handled above, so no message is printed here.
+      nullptr,
       "flash dump done",
       "flash dump aborted",
       "flash dump error"
