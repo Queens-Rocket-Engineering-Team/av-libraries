@@ -52,9 +52,6 @@ enum NodeState : uint8_t {
   FAULT = 6U
 };
 
-void board_init(void);
-// Add board-specific periodic behavior in board_update(state).
-// The current node state is provided so board logic can vary by system mode.
-void board_update(NodeState state);
+void node_update(void);
 
 #endif  // NODE_H

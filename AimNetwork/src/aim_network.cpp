@@ -19,24 +19,13 @@ void AimNetwork::begin() {
   }
 }
 
-bool AimNetwork::isSendFieldsValid(uint8_t dest, uint8_t type) const {
-  if ((dest > AIM_DEST_ADDR_MAX) || (type > AIM_TYP_ADDR_MAX)) {
-    LOG_ERROR("AimNetwork send failed: invalid dest/type (dest=0x%02X type=0x%02X)",
-              static_cast<unsigned int>(dest),
-              static_cast<unsigned int>(type));
-    return false;
-  }
-
-  return true;
-}
-
 bool AimNetwork::sendPkt(const aimPkt& pkt) {
   if (_hw == nullptr) {
     LOG_ERROR("AimNetwork sendPkt failed: hardware driver is null");
     return false;
   }
 
-  const bool sent = _hw->transmit(reinterpret_cast<const uint8_t*>(&pkt), sizeof(aimPkt));
+  const bool sent = _hw->transmit(pkt);
   if (!sent) {
     LOG_ERROR("AimNetwork sendPkt failed: CAN transmit returned false");
   }
@@ -44,7 +33,10 @@ bool AimNetwork::sendPkt(const aimPkt& pkt) {
 }
 
 bool AimNetwork::sendPkt64(uint64_t data, uint8_t dest, uint8_t type) {
-  if (!isSendFieldsValid(dest, type)) {
+  if ((dest > AIM_DEST_ADDR_MAX) || (type > AIM_TYP_ADDR_MAX)) {
+    LOG_ERROR("AimNetwork send failed: invalid dest/type (dest=0x%02X type=0x%02X)",
+              static_cast<unsigned int>(dest),
+              static_cast<unsigned int>(type));
     return false;
   }
 
@@ -57,7 +49,10 @@ bool AimNetwork::sendPkt64(uint64_t data, uint8_t dest, uint8_t type) {
 }
 
 bool AimNetwork::sendPkt32(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type) {
-  if (!isSendFieldsValid(dest, type)) {
+  if ((dest > AIM_DEST_ADDR_MAX) || (type > AIM_TYP_ADDR_MAX)) {
+    LOG_ERROR("AimNetwork send failed: invalid dest/type (dest=0x%02X type=0x%02X)",
+              static_cast<unsigned int>(dest),
+              static_cast<unsigned int>(type));
     return false;
   }
 
@@ -77,7 +72,7 @@ bool AimNetwork::readPkt(aimPkt& pkt) {
     return false;
   }
 
-  return _hw->receive(reinterpret_cast<uint8_t*>(&pkt), sizeof(aimPkt));
+  return _hw->receive(pkt);
 }
 
 void AimNetwork::syncTime(uint32_t remoteMillis) {

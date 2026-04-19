@@ -71,6 +71,10 @@ bool AimCanDriver::unpackAimPkt(const CanCoreFrame& can_msg, aimPkt& aim_pkt) {
 }
 
 void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
+  (void)isBeginFailure;
+  (void)canId;
+
+#ifndef FLIGHT_BUILD
   const char* const op = isBeginFailure ? "begin" : "tx";
 
 #if defined(ARDUINO_ARCH_STM32)
@@ -108,6 +112,8 @@ void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
       0UL,
       static_cast<unsigned long>(stats.lastError));
 #endif
+
+#endif // FLIGHT_BUILD
 }
 
 void AimCanDriver::begin() {
@@ -129,21 +135,11 @@ void AimCanDriver::begin() {
   }
 }
 
-bool AimCanDriver::transmit(const uint8_t* buf, size_t len) {
-  AIM_ASSERT((buf != nullptr) && (len == sizeof(aimPkt)));
-
-  if ((buf == nullptr) || (len != sizeof(aimPkt))) {
-    LOG_ERROR("AimCanDriver transmit failed: invalid buffer or size (%u)", static_cast<unsigned>(len));
-    return false;
-  }
-
+bool AimCanDriver::transmit(const aimPkt& pkt) {
   if (!_initialized) {
     LOG_ERROR("AimCanDriver transmit failed: driver not initialized");
     return false;
   }
-
-  aimPkt pkt;
-  (void)memcpy(&pkt, buf, sizeof(pkt));
 
   CanCoreFrame can_msg = {};
   if (!packAimPkt(pkt, can_msg)) {
@@ -159,14 +155,7 @@ bool AimCanDriver::transmit(const uint8_t* buf, size_t len) {
   return sent;
 }
 
-bool AimCanDriver::receive(uint8_t* buf, size_t len) {
-  AIM_ASSERT((buf != nullptr) && (len == sizeof(aimPkt)));
-
-  if ((buf == nullptr) || (len != sizeof(aimPkt))) {
-    LOG_ERROR("AimCanDriver receive failed: invalid buffer or size (%u)", static_cast<unsigned>(len));
-    return false;
-  }
-
+bool AimCanDriver::receive(aimPkt& pkt) {
   if (!_initialized) {
     LOG_ERROR("AimCanDriver receive failed: driver not initialized");
     return false;
@@ -177,7 +166,6 @@ bool AimCanDriver::receive(uint8_t* buf, size_t len) {
     return false;
   }
 
-  aimPkt pkt;
   if (!unpackAimPkt(can_msg, pkt)) {
     LOG_ERROR(
         "AimCanDriver receive failed: unpack rejected id=0x%03X dlc=%u",
@@ -186,6 +174,5 @@ bool AimCanDriver::receive(uint8_t* buf, size_t len) {
     return false;
   }
 
-  (void)memcpy(buf, &pkt, sizeof(pkt));
   return true;
 }

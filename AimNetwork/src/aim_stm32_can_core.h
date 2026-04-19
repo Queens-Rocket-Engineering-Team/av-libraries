@@ -93,7 +93,6 @@ private:
   bool pollRx();
   bool configureFilter();
   bool configureTiming();
-  bool validateCanBus() const;
   void updateErrorTelemetry();
 
   static uint32_t enterCritical();

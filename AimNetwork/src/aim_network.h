@@ -62,7 +62,7 @@
 
 #define AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS 5000U
 
-#define AIM_NETWORK_VERSION_STRING "0.3.1"
+#define AIM_NETWORK_VERSION_STRING "0.3.2"
 
 
 // ── AIM Packet ───────────────────────────────────────────────
@@ -151,7 +151,6 @@ public:
   int32_t getTimeOffset() const;
 
 private:
-  bool isSendFieldsValid(uint8_t dest, uint8_t type) const;
   int16_t findHealthIndex(uint8_t origin) const;
 
   AimCanDriver* _hw;
