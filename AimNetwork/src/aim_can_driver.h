@@ -31,8 +31,8 @@ public:
 #endif
 
   void begin();
-  bool transmit(const uint8_t* buf, size_t len);
-  bool receive(uint8_t* buf, size_t len);
+  bool transmit(const aimPkt& pkt);
+  bool receive(aimPkt& pkt);
 
 private:
   uint8_t  _origin;

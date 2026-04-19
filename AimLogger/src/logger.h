@@ -27,17 +27,11 @@ public:
     void setNodeId(uint8_t node_id) { node_id_ = node_id; }
 
     void log(LogLevel level, const char* fmt, ...);
-    void debug(const char* fmt, ...);
-    void info(const char* fmt, ...);
-    void warn(const char* fmt, ...);
-    void error(const char* fmt, ...);
 
 private:
-    static constexpr size_t kMsgSize  = 96U;
     static constexpr size_t kLineSize = 160U;
 
     static const char* levelToString(LogLevel level);
-    void logV(LogLevel level, const char* fmt, va_list args);
 
     Stream*   output_;
     uint8_t   node_id_;
@@ -47,10 +41,10 @@ private:
 extern Logger* g_logger;
 
 #ifndef FLIGHT_BUILD
-  #define LOG_DEBUG(...) do { if (g_logger) g_logger->debug(__VA_ARGS__); } while (0)
-  #define LOG_INFO(...)  do { if (g_logger) g_logger->info(__VA_ARGS__); } while (0)
-  #define LOG_WARN(...)  do { if (g_logger) g_logger->warn(__VA_ARGS__); } while (0)
-  #define LOG_ERROR(...) do { if (g_logger) g_logger->error(__VA_ARGS__); } while (0)
+  #define LOG_DEBUG(...) do { if (g_logger) g_logger->log(LogLevel::DEBUG, __VA_ARGS__); } while (0)
+  #define LOG_INFO(...)  do { if (g_logger) g_logger->log(LogLevel::INFO, __VA_ARGS__); } while (0)
+  #define LOG_WARN(...)  do { if (g_logger) g_logger->log(LogLevel::WARN, __VA_ARGS__); } while (0)
+  #define LOG_ERROR(...) do { if (g_logger) g_logger->log(LogLevel::ERROR, __VA_ARGS__); } while (0)
 #else
   #define LOG_DEBUG(...) do {} while (0)
   #define LOG_INFO(...)  do {} while (0)

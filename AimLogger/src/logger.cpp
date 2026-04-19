@@ -15,68 +15,32 @@ const char* Logger::levelToString(LogLevel level)
     }
 }
 
-void Logger::logV(LogLevel level, const char* fmt, va_list args)
+void Logger::log(LogLevel level, const char* fmt, ...)
 {
     if ((output_ == nullptr) || (level < level_) || (fmt == nullptr))
     {
         return;
     }
 
-    char msg[kMsgSize];
     char line[kLineSize];
-
-    (void)vsnprintf(msg, sizeof(msg), fmt, args);
-
     const unsigned long ts = millis();
-    (void)snprintf(
+
+    int offset = snprintf(
         line,
         sizeof(line),
-        "[NODE:%u][%08lu][%s] %s",
+        "[NODE:%u][%08lu][%s] ",
         static_cast<unsigned>(node_id_),
         ts,
-        levelToString(level),
-        msg
+        levelToString(level)
     );
 
+    if ((offset > 0) && (static_cast<size_t>(offset) < sizeof(line)))
+    {
+        va_list args;
+        va_start(args, fmt);
+        (void)vsnprintf(line + offset, sizeof(line) - static_cast<size_t>(offset), fmt, args);
+        va_end(args);
+    }
+
     output_->println(line);
-}
-
-void Logger::log(LogLevel level, const char* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    logV(level, fmt, args);
-    va_end(args);
-}
-
-void Logger::debug(const char* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    logV(LogLevel::DEBUG, fmt, args);
-    va_end(args);
-}
-
-void Logger::info(const char* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    logV(LogLevel::INFO, fmt, args);
-    va_end(args);
-}
-
-void Logger::warn(const char* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    logV(LogLevel::WARN, fmt, args);
-    va_end(args);
-}
-
-void Logger::error(const char* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    logV(LogLevel::ERROR, fmt, args);
-    va_end(args);
 }

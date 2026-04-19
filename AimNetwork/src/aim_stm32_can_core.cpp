@@ -198,26 +198,7 @@ void AimStm32CanCore::clearStats() {
   AimStm32CanCore::exitCritical(primask);
 }
 
-bool AimStm32CanCore::validateCanBus() const {
-  if (_canbus == nullptr) {
-    return false;
-  }
 
-#if defined(CAN1)
-  if ((_canbus != CAN1)
-#if defined(CAN2)
-      && (_canbus != CAN2)
-#endif
-#if defined(CAN3)
-      && (_canbus != CAN3)
-#endif
-  ) {
-    return false;
-  }
-#endif
-
-  return true;
-}
 
 bool AimStm32CanCore::configureTiming() {
   if (_canbus == nullptr) {
@@ -312,7 +293,20 @@ bool AimStm32CanCore::begin() {
     return true;
   }
 
-  if (!validateCanBus()) {
+  bool validBus = false;
+  if (_canbus != nullptr) {
+#if defined(CAN1)
+    if (_canbus == CAN1) validBus = true;
+#endif
+#if defined(CAN2)
+    if (_canbus == CAN2) validBus = true;
+#endif
+#if defined(CAN3)
+    if (_canbus == CAN3) validBus = true;
+#endif
+  }
+
+  if (!validBus) {
     LOG_ERROR("AimStm32CanCore begin failed: invalid CAN instance");
     return false;
   }
