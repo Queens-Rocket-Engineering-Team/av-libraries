@@ -410,55 +410,72 @@ void FlashTable::seekToEmpty(Stream* stream) {
     return;
   }
 
-  uint8_t numEmpties = 0U;
-  bool courseDone = false;
+  uint32_t pos = 0U;
+  uint8_t buf = 0U;
 
-  _file.seek(0U);
+  while (pos < fileSize) {
+    _file.seek(pos);
+    if (_file.read(&buf, 1) != 1U) {
+      break;
+    }
 
-  uint8_t serBuffer[1] = {0U};
-  while ((_file.position() < fileSize) && !courseDone) {
-    _file.read(serBuffer, 1);
-    if (serBuffer[0] == kEmptyValue) {
-      numEmpties++;
+    if (buf != kEmptyValue) {
+      pos += kCoarseSeekStep;
+      if (pos >= fileSize) {
+        _file.seek(fileSize - 1U);
+        return;
+      }
+      continue;
+    }
 
-      while ((numEmpties < kNumEmptyTrigger) && (_file.position() < fileSize)) {
-        _file.read(serBuffer, 1);
-        if (serBuffer[0] == kEmptyValue) {
-          numEmpties++;
-        } else {
-          numEmpties = 0U;
+    uint8_t empties = 1U;
+    for (uint8_t i = 1U; i < kNumEmptyTrigger; i++) {
+      if (pos + i >= fileSize) {
+        empties++;
+        continue;
+      }
+      _file.seek(pos + i);
+      if (_file.read(&buf, 1) == 1U && buf == kEmptyValue) {
+        empties++;
+      } else {
+        break;
+      }
+    }
+
+    if (empties >= kNumEmptyTrigger) {
+      const uint32_t searchStart = (pos >= kCoarseSeekStep) ? (pos - kCoarseSeekStep) : 0U;
+      uint32_t scanPos = pos;
+
+      while (scanPos > searchStart) {
+        uint8_t chunk[64];
+        uint32_t readLen = sizeof(chunk);
+        if (scanPos - searchStart < readLen) {
+          readLen = scanPos - searchStart;
+        }
+
+        const uint32_t chunkStart = scanPos - readLen;
+        _file.seek(chunkStart);
+        if (_file.read(chunk, readLen) != readLen) {
           break;
         }
-      }
 
-      if (numEmpties >= kNumEmptyTrigger) {
-        _file.seek(_file.position() - kNumEmptyTrigger);
-        if (_file.position() == 0U) {
-          return;
-        }
-
-        while (_file.position() > 0U) {
-          _file.read(serBuffer, 1);
-          if (serBuffer[0] != kEmptyValue) {
-            _file.seek(_file.position() + kNumEmptyTrigger - 1U);
-            courseDone = true;
-            break;
-          }
-
-          if (_file.position() == 0U) {
+        for (int32_t i = static_cast<int32_t>(readLen) - 1; i >= 0; i--) {
+          if (chunk[i] != kEmptyValue) {
+            _file.seek(chunkStart + static_cast<uint32_t>(i));
             return;
           }
-
-          _file.seek(_file.position() - 2U);
         }
+        scanPos = chunkStart;
       }
+
+      if (searchStart > 0U) {
+        _file.seek(searchStart - 1U);
+      } else {
+        _file.seek(0U);
+      }
+      return;
     } else {
-      numEmpties = 0U;
-      uint32_t nextPos = _file.position() + kCoarseSeekStep;
-      if (nextPos >= fileSize) {
-        nextPos = fileSize - 1U;
-      }
-      _file.seek(nextPos);
+      pos += kCoarseSeekStep;
     }
   }
 
@@ -466,10 +483,6 @@ void FlashTable::seekToEmpty(Stream* stream) {
     _file.seek(_file.position() - 1U);
   } else {
     _file.seek(0U);
-  }
-
-  if (_file.position() >= fileSize) {
-    _file.seek(fileSize - 1U);
   }
 }
 
