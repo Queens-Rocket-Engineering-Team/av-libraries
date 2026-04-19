@@ -62,6 +62,8 @@
 
 #define AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS 5000U
 
+#define AIM_NETWORK_VERSION_STRING "0.3.1"
+
 
 // ── AIM Packet ───────────────────────────────────────────────
 // Data field (timed format): upper 5 bits reserved, next 27 bits = timestamp (ms), lower 32 bits = payload
