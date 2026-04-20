@@ -8,24 +8,23 @@
 
 class AimNetwork;
 class Logger;
-class FlashTable;
 
 enum ConsoleAction : uint8_t {
-  CONSOLE_ACTION_NONE       = 0U,
-  CONSOLE_ACTION_ENTER      = 1U,
-  CONSOLE_ACTION_EXIT       = 2U,
-  CONSOLE_ACTION_FLASH_DUMP = 3U,
-  CONSOLE_ACTION_DUMP_DONE  = 4U
+  CONSOLE_ACTION_NONE        = 0U,
+  CONSOLE_ACTION_ENTER       = 1U,
+  CONSOLE_ACTION_EXIT        = 2U,
+  CONSOLE_ACTION_FLASH_INFO  = 3U,
+  CONSOLE_ACTION_FLASH_DUMP  = 4U,
+  CONSOLE_ACTION_FLASH_ERASE = 5U
 };
 
 void consoleInit(Stream& serial,
                  AimNetwork& aim,
-                 Logger& log,
-                 FlashTable& flash);
+                 Logger& log);
 
 ConsoleAction consoleCheckEntry(void);
 ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs);
-ConsoleAction consoleServiceFlashDump(void);
+void consoleResume(void);
 
 #endif // FLIGHT_BUILD
 

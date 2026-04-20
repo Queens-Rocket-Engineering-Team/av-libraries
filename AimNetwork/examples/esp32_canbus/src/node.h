@@ -8,8 +8,9 @@
 #include <aim_network.h>
 #include <aim_safety.h>
 
-// Board-level identity and interface configuration lives in this file.
+// Node-level identity and interface configuration lives in this file.
 #define NODE_ORIGIN AIM_ORG_UPROP
+#define NODE_NAME "ESP32_CANBUS"
 
 #define NODE_CAN_BAUD 500000U
 
@@ -20,20 +21,18 @@
 #define NODE_SERIAL_TX_PIN 17
 #define NODE_SERIAL_BAUD 38400U
 
-// Board-level health monitor configuration.
-#define NODE_ENABLE_HEALTH_MONITOR 1U
-#define NODE_HEALTH_TIMEOUT_MS 750U
-
 enum NodeState : uint8_t {
   INIT = 0U,
   OPERATIONAL = 1U,
-  DEGRADED = 2U,
-  SAFE_MODE = 3U,
-  FAULT = 4U
+  DEBUG_CONSOLE = 2U,
+  FLASH_DUMP = 3U,
+  FLASH_ERASE = 4U,
+  SAFE_MODE = 5U,
+  LOW_POWER = 6U,
+  FAULT = 7U
 };
 
-void board_init(void);
-// Add board-specific periodic behavior in board_update().
-void board_update(NodeState state);
+// Add node-specific periodic behavior in nodeUpdate().
+void nodeUpdate(uint32_t schedulerNowMs);
 
 #endif  // NODE_H

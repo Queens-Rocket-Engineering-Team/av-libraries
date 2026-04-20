@@ -15,8 +15,7 @@
   ],
   "frameworks": "arduino",
   "platforms": [
-    "ststm32",
-    "espressif32"
+    "ststm32"
   ],
   "dependencies": [
     {
