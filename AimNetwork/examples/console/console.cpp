@@ -10,7 +10,9 @@
 enum ConsoleMenu : uint8_t {
   CONSOLE_MENU_ROOT      = 0U,
   CONSOLE_MENU_LOG_MASK  = 1U,
-  CONSOLE_MENU_FLASH     = 2U
+  CONSOLE_MENU_FLASH     = 2U,
+  CONSOLE_MENU_FLASH_ERASE_CONFIRM = 3U
+  // add more menus as needed
 };
 
 static Stream* s_serial = nullptr;
@@ -42,11 +44,11 @@ static int readChar(void) {
   return static_cast<int>(c);
 }
 
-static void showMenu(ConsoleMenu menu) {
+static void showMenu(ConsoleMenu menu) { // All menu prints located here, add more if needed
   AIM_ASSERT(s_serial != nullptr);
 
   s_menu = menu;
-  switch (menu) {
+  switch (menu) { 
     case CONSOLE_MENU_ROOT:
       s_serial->println("DEBUG: q exit | b back");
       s_serial->println("1 status | 2 log | 3 flash");
@@ -60,6 +62,13 @@ static void showMenu(ConsoleMenu menu) {
       s_serial->println("FLASH: q exit | b back");
       s_serial->println("1 info | 2 dump | 3 erase");
       break;
+    case CONSOLE_MENU_FLASH_ERASE_CONFIRM:
+      s_serial->println("FLASH ERASE: q exit | b back");
+      s_serial->println("1 confirm");
+      break;
+
+    // add additional menu prints here
+
     default:
       s_menu = CONSOLE_MENU_ROOT;
       s_serial->println("DEBUG: q exit | b back");
@@ -119,6 +128,9 @@ void consoleInit(Stream& serial,
   s_menu = CONSOLE_MENU_ROOT;
 }
 
+
+// add additional console action definitions here
+
 ConsoleAction consoleCheckEntry(void) {
   const int c = readChar();
   if (c == 'd') {
@@ -142,11 +154,10 @@ ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs) {
 
   switch (s_menu) {
     case CONSOLE_MENU_ROOT:
-      if (c == 'b') {
-        showMenu(CONSOLE_MENU_ROOT);
-        break;
-      }
       switch (c) {
+        case 'b':
+          showMenu(CONSOLE_MENU_ROOT);
+          break;
         case '1':
           printStatus(currentState, networkNowMs);
           break;
@@ -157,16 +168,17 @@ ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs) {
           showMenu(CONSOLE_MENU_FLASH);
           break;
         default:
+          showMenu(CONSOLE_MENU_ROOT);
           break;
       }
       break;
 
     case CONSOLE_MENU_LOG_MASK:
-      if (c == 'b') {
-        showMenu(CONSOLE_MENU_ROOT);
-        break;
-      }
+
       switch (c) {
+        case 'b':
+          showMenu(CONSOLE_MENU_ROOT);
+          break;
         case '1':
           setLogMask(static_cast<uint8_t>(LogLevel::DEBUG), "DEBUG only");
           break;
@@ -193,31 +205,54 @@ ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs) {
                      "INFO/WARN/ERROR");
           break;
         default:
+          showMenu(CONSOLE_MENU_LOG_MASK);
           break;
       }
       break;
 
     case CONSOLE_MENU_FLASH:
-      if (c == 'b') {
-        showMenu(CONSOLE_MENU_ROOT);
-        break;
-      }
       switch (c) {
+        case 'b':
+          showMenu(CONSOLE_MENU_ROOT);
+          break;
         case '1':
           return CONSOLE_ACTION_FLASH_INFO;
         case '2':
           return CONSOLE_ACTION_FLASH_DUMP;
         case '3':
-          return CONSOLE_ACTION_FLASH_ERASE;
+          showMenu(CONSOLE_MENU_FLASH_ERASE_CONFIRM);
+          break;
         default:
+          showMenu(CONSOLE_MENU_FLASH);
           break;
       }
       break;
+
+    case CONSOLE_MENU_FLASH_ERASE_CONFIRM:
+      switch (c){
+        case 'b':
+          showMenu(CONSOLE_MENU_FLASH);
+          break;
+        case '1':
+          return CONSOLE_ACTION_FLASH_ERASE;
+          break;
+        default:
+          showMenu(CONSOLE_MENU_FLASH_ERASE_CONFIRM);
+          break;
+      }
+      break;
+
+      /***************************************************
+      ADD ADDITIONAL MENU CASES HERE
+      SUBMENUS CASES SHOULD DIRECTLY AFTER THE HIGHER MENU
+      ****************************************************/
+
 
     default:
       showMenu(CONSOLE_MENU_ROOT);
       break;
   }
+
 
   return CONSOLE_ACTION_NONE;
 }
