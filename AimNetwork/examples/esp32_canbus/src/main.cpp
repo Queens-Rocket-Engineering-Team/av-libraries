@@ -4,9 +4,8 @@
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
 #include <logger.h>
-#include <SoftwareSerial.h>
 
-static constexpr uint32_t kWatchdogTimeoutMs = 2000U;
+static constexpr uint32_t kWatchdogTimeoutMs = 20000U;
 static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
 
 struct NodeSchedulerState {
@@ -19,8 +18,7 @@ static AimNetwork g_aim(&g_canHw, NODE_ORIGIN);
 
 static NodeSchedulerState g_schedulerState = {};
 static bool g_watchdogReady = false;
-static SoftwareSerial g_serial(NODE_SERIAL_RX_PIN, NODE_SERIAL_TX_PIN);
-static Logger g_log(g_serial, NODE_ORIGIN, LogLevel::INFO);
+static Logger g_log(Serial, NODE_ORIGIN, LogLevel::INFO);
 
 void initWatchdog(void) {
 #if ESP_IDF_VERSION_MAJOR >= 5
@@ -113,35 +111,35 @@ void runStateMachine(uint32_t schedulerNowMs, uint32_t networkNowMs) {
       if (act == CONSOLE_ACTION_EXIT) {
         g_schedulerState.value = OPERATIONAL;
       } else if (act == CONSOLE_ACTION_FLASH_INFO) {
-        // g_flashTable.commandInfo(&g_serial);
+        // g_flashTable.commandInfo(&Serial);
       } else if (act == CONSOLE_ACTION_FLASH_DUMP) {
-        // if (g_flashTable.commandDump(&g_serial, 512U, nullptr, nullptr)) {
+        // if (g_flashTable.commandDump(&Serial, 512U, nullptr, nullptr)) {
         //   g_schedulerState.value = FLASH_DUMP;
-        //   g_serial.print("state=");
-        //   g_serial.println(static_cast<unsigned>(FLASH_DUMP));
+        //   Serial.print("state=");
+        //   Serial.println(static_cast<unsigned>(FLASH_DUMP));
         // }
       } else if (act == CONSOLE_ACTION_FLASH_ERASE) {
-        // g_flashTable.commandErase(&g_serial);
+        // g_flashTable.commandErase(&Serial);
         // g_schedulerState.value = FLASH_ERASE;
       }
       break;
     }
 
     case FLASH_DUMP: {
-      // if (g_serial.available() > 0) {
-      //   const int c = g_serial.read();
+      // if (Serial.available() > 0) {
+      //   const int c = Serial.read();
       //   if (c == 'q' || c == 'Q') {
       //     g_flashTable.cancelDump();
-      //     g_serial.println("flash dump canceled");
+      //     Serial.println("flash dump canceled");
       //     g_schedulerState.value = DEBUG_CONSOLE;
-      //     g_serial.print("state=");
-      //     g_serial.println(static_cast<unsigned>(DEBUG_CONSOLE));
+      //     Serial.print("state=");
+      //     Serial.println(static_cast<unsigned>(DEBUG_CONSOLE));
       //     consoleResume();
       //     break;
       //   }
       // }
 
-      // const FlashTableServiceResult r = g_flashTable.serviceDump(&g_serial, 16U);
+      // const FlashTableServiceResult r = g_flashTable.serviceDump(&Serial, 16U);
       // if (r != FLASHTABLE_SERVICE_ACTIVE) {
       //   static const char* const kDumpMsg[] = {
       //     "flash dump idle",
@@ -152,11 +150,11 @@ void runStateMachine(uint32_t schedulerNowMs, uint32_t networkNowMs) {
       //   };
       //   const uint8_t idx = static_cast<uint8_t>(r);
       //   if (idx < 5U && kDumpMsg[idx] != nullptr) {
-      //     g_serial.println(kDumpMsg[idx]);
+      //     Serial.println(kDumpMsg[idx]);
       //   }
       //   g_schedulerState.value = DEBUG_CONSOLE;
-      //   g_serial.print("state=");
-      //   g_serial.println(static_cast<unsigned>(DEBUG_CONSOLE));
+      //   Serial.print("state=");
+      //   Serial.println(static_cast<unsigned>(DEBUG_CONSOLE));
       //   consoleResume();
       // }
       break;
@@ -165,7 +163,7 @@ void runStateMachine(uint32_t schedulerNowMs, uint32_t networkNowMs) {
     case FLASH_ERASE: {
       // const FlashTableServiceResult r = g_flashTable.serviceErase();
       // if (r != FLASHTABLE_SERVICE_ACTIVE) {
-      //   g_serial.println(r == FLASHTABLE_SERVICE_DONE ? "flash erase done" : "flash erase error");
+      //   Serial.println(r == FLASHTABLE_SERVICE_DONE ? "flash erase done" : "flash erase error");
       //   g_schedulerState.value = DEBUG_CONSOLE;
       //   consoleResume();
       // }
@@ -194,7 +192,7 @@ void nodeUpdate(uint32_t schedulerNowMs) {
 
 void setup(void) {
   AIM_ASSERT(NODE_ORIGIN <= AIM_ORG_ADDR_MAX);
-  g_serial.begin(NODE_SERIAL_BAUD);
+  Serial.begin(NODE_SERIAL_BAUD);
   g_logger = &g_log;
   LOG_INFO("Boot node origin=%u", static_cast<unsigned>(NODE_ORIGIN));
   initWatchdog();
@@ -202,11 +200,11 @@ void setup(void) {
   g_aim.begin();
 
 #ifndef FLIGHT_BUILD
-  consoleInit(g_serial, g_aim, g_log);
+  consoleInit(Serial, g_aim, g_log);
 #endif
 
 #ifndef FLIGHT_BUILD
-  g_serial.println("Console ready. d=enter debug");
+  Serial.println("Console ready. d=enter debug");
 #endif
   g_schedulerState.lastHeartbeatTxMs = millis();
   g_schedulerState.value = OPERATIONAL;

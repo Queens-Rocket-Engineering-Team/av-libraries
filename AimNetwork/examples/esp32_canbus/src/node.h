@@ -13,13 +13,10 @@
 #define NODE_NAME "ESP32_CANBUS"
 
 #define NODE_CAN_BAUD 500000U
-
 #define NODE_CAN_RX_PIN 4
 #define NODE_CAN_TX_PIN 5
 
-#define NODE_SERIAL_RX_PIN 16
-#define NODE_SERIAL_TX_PIN 17
-#define NODE_SERIAL_BAUD 38400U
+#define NODE_SERIAL_BAUD 115200U
 
 enum NodeState : uint8_t {
   INIT = 0U,
