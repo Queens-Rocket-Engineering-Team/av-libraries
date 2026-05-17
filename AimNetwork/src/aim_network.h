@@ -26,17 +26,14 @@
 // ── Packet Types (4-bit, 0x0->0xF) ──────────────────────────
 
 #define AIM_TYP_TIME      0x0
-#define AIM_TYP_PT1       0x1
-#define AIM_TYP_PT2       0x2
-#define AIM_TYP_TC        0x4
-#define AIM_TYP_VAL1      0x5
-#define AIM_TYP_VAL2      0x6
-#define AIM_TYP_GPS_LAT   0x7
-#define AIM_TYP_GPS_LONG  0x8
-#define AIM_TYP_ALT       0x9
-#define AIM_TYP_LOWPW     0xA
-#define AIM_TYP_HEARTBEAT 0xB
-#define AIM_TYP_NODATA    0xE
+#define AIM_TYP_SENSOR    0x1
+#define AIM_TYP_VALVE     0x2
+#define AIM_TYP_GPS_LAT   0x3
+#define AIM_TYP_GPS_LONG  0x4
+#define AIM_TYP_ALT       0x5
+#define AIM_TYP_LOWPW     0x6
+#define AIM_TYP_HEARTBEAT 0x7
+#define AIM_TYP_NODATA    0x8
 #define AIM_TYP_UNDEFINED 0xF
 
 
@@ -53,20 +50,24 @@
 
 // ── Timed data layout constants (for downstream validation) ──
 
+#define AIM_PKT_TIMED_ENDPOINT_BITS  5
 #define AIM_PKT_TIMED_MILLIS_BITS    27
 #define AIM_PKT_TIMED_PAYLOAD_BITS   32
 #define AIM_PKT_RAW_PAYLOAD_BITS     64
 
+#define AIM_PKT_TIMED_ENDPOINT_SHIFT (AIM_PKT_TIMED_MILLIS_BITS + AIM_PKT_TIMED_PAYLOAD_BITS)
+
+#define AIM_PKT_TIMED_ENDPOINT_MAX   ((1U << AIM_PKT_TIMED_ENDPOINT_BITS) - 1U)
 #define AIM_PKT_TIMED_MILLIS_MAX     ((1UL << AIM_PKT_TIMED_MILLIS_BITS) - 1UL)
 #define AIM_PKT_TIMED_PAYLOAD_MAX    ((1ULL << AIM_PKT_TIMED_PAYLOAD_BITS) - 1ULL)
 
 #define AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS 5000U
 
-#define AIM_NETWORK_VERSION_STRING "0.3.2"
+#define AIM_NETWORK_VERSION_STRING "0.4.0"
 
 
 // ── AIM Packet ───────────────────────────────────────────────
-// Data field (timed format): upper 5 bits reserved, next 27 bits = timestamp (ms), lower 32 bits = payload
+// Data field (timed format): upper 5 bits = endpoint ID, next 27 bits = timestamp (ms), lower 32 bits = payload
 // Data field (raw format): entire 64 bits are payload
 
 typedef struct aimPkt {
@@ -76,13 +77,21 @@ typedef struct aimPkt {
   uint8_t  type    : AIM_TYP_ADDR_SIZE;
   uint64_t data;
 
+  uint8_t getEndpointId() const {
+    return static_cast<uint8_t>((data >> AIM_PKT_TIMED_ENDPOINT_SHIFT) & (uint64_t)AIM_PKT_TIMED_ENDPOINT_MAX);
+  }
   uint32_t getMillis()  const { return (uint32_t)((data >> AIM_PKT_TIMED_PAYLOAD_BITS) & (uint64_t)AIM_PKT_TIMED_MILLIS_MAX); }
   uint32_t getPayload() const { return (uint32_t)(data & (uint64_t)AIM_PKT_TIMED_PAYLOAD_MAX); }
   uint64_t getPayload64() const { return data; }
 
-  static uint64_t packData(uint32_t ms, uint32_t payload) {
-    return (((uint64_t)ms & (uint64_t)AIM_PKT_TIMED_MILLIS_MAX) << AIM_PKT_TIMED_PAYLOAD_BITS) |
+  static uint64_t packDataEx(uint8_t endpointId, uint32_t ms, uint32_t payload) {
+    return (((uint64_t)endpointId & (uint64_t)AIM_PKT_TIMED_ENDPOINT_MAX) << AIM_PKT_TIMED_ENDPOINT_SHIFT) |
+           (((uint64_t)ms & (uint64_t)AIM_PKT_TIMED_MILLIS_MAX) << AIM_PKT_TIMED_PAYLOAD_BITS) |
            ((uint64_t)payload & (uint64_t)AIM_PKT_TIMED_PAYLOAD_MAX);
+  }
+
+  static uint64_t packData(uint32_t ms, uint32_t payload) {
+    return packDataEx(0U, ms, payload);
   }
 
 } aimPkt;
@@ -96,6 +105,7 @@ inline void aimPrintPkt(Stream& out, const aimPkt& pkt, const char* label = "") 
   out.print("org=0x"); out.print(pkt.origin, HEX);
   out.print(" dst=0x"); out.print(pkt.dest, HEX);
   out.print(" typ=0x"); out.print(pkt.type, HEX);
+  out.print(" ep=0x");  out.print(pkt.getEndpointId(), HEX);
   out.print(" pay=0x"); out.print(pkt.getPayload(), HEX);
   out.print(" t=");     out.print(pkt.getMillis());
   out.println("ms");
@@ -126,6 +136,7 @@ public:
 
   // Send with millis + payload (packs data for you)
   bool sendPkt32(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
+  bool sendPkt32Ex(uint32_t endpointId, uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
 
   bool readPkt(aimPkt& pkt);
 
