@@ -50,6 +50,8 @@ enum NodeState : uint8_t {
 };
 
 // Add node-specific periodic behavior in nodeUpdate().
+// Keep packet handling here only when it is specific to this node.
+bool nodeHandleCanPacket(const aimPkt& pkt, uint32_t networkNowMs, AimNetwork& aim);
 void nodeUpdate(uint32_t schedulerNowMs);
 
 #endif  // NODE_H

@@ -63,7 +63,7 @@
 
 #define AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS 5000U
 
-#define AIM_NETWORK_VERSION_STRING "0.4.0"
+#define AIM_NETWORK_VERSION_STRING "0.4.1"
 
 
 // ── AIM Packet ───────────────────────────────────────────────
@@ -84,14 +84,10 @@ typedef struct aimPkt {
   uint32_t getPayload() const { return (uint32_t)(data & (uint64_t)AIM_PKT_TIMED_PAYLOAD_MAX); }
   uint64_t getPayload64() const { return data; }
 
-  static uint64_t packDataEx(uint8_t endpointId, uint32_t ms, uint32_t payload) {
+  static uint64_t packTimeDataEx(uint8_t endpointId, uint32_t ms, uint32_t payload) {
     return (((uint64_t)endpointId & (uint64_t)AIM_PKT_TIMED_ENDPOINT_MAX) << AIM_PKT_TIMED_ENDPOINT_SHIFT) |
            (((uint64_t)ms & (uint64_t)AIM_PKT_TIMED_MILLIS_MAX) << AIM_PKT_TIMED_PAYLOAD_BITS) |
            ((uint64_t)payload & (uint64_t)AIM_PKT_TIMED_PAYLOAD_MAX);
-  }
-
-  static uint64_t packData(uint32_t ms, uint32_t payload) {
-    return packDataEx(0U, ms, payload);
   }
 
 } aimPkt;
@@ -105,7 +101,7 @@ inline void aimPrintPkt(Stream& out, const aimPkt& pkt, const char* label = "") 
   out.print("org=0x"); out.print(pkt.origin, HEX);
   out.print(" dst=0x"); out.print(pkt.dest, HEX);
   out.print(" typ=0x"); out.print(pkt.type, HEX);
-  out.print(" ep=0x");  out.print(pkt.getEndpointId(), HEX);
+  out.print(" endpoint=0x");  out.print(pkt.getEndpointId(), HEX);
   out.print(" pay=0x"); out.print(pkt.getPayload(), HEX);
   out.print(" t=");     out.print(pkt.getMillis());
   out.println("ms");
@@ -134,9 +130,10 @@ public:
   // Send with raw 64-bit data field
   bool sendPkt64(uint64_t data, uint8_t dest, uint8_t type);
 
-  // Send with millis + payload (packs data for you)
-  bool sendPkt32(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
-  bool sendPkt32Ex(uint32_t endpointId, uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
+  // Send timed payload (packs data for you).
+  // Uses endpointId=0 (default channel) for non-endpoint packet types.
+  bool sendTimedPkt(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
+  bool sendTimedPktEx(uint8_t endpointId, uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
 
   bool readPkt(aimPkt& pkt);
 

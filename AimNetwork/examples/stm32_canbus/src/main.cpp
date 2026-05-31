@@ -45,6 +45,9 @@ void serviceCanRx(uint32_t networkNowMs) {
       g_aim.syncTime(static_cast<uint32_t>(pkt.getPayload64()));
       LOG_DEBUG("Time sync received: networkNowMs=%u", networkNowMs);
     }
+
+    // Route node-specific packets to node.cpp for processing.
+    (void)nodeHandleCanPacket(pkt, networkNowMs, g_aim);
   }
 }
 
@@ -55,7 +58,7 @@ void serviceCanTx(uint32_t schedulerNowMs, uint32_t networkNowMs) {
   if ((schedulerNowMs - g_schedulerState.lastHeartbeatTxMs) >= AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS) {
     g_schedulerState.lastHeartbeatTxMs = schedulerNowMs;
     const uint32_t payload = static_cast<uint32_t>(g_schedulerState.value);
-    if (!g_aim.sendPkt32(networkNowMs, payload, AIM_DEST_BROADCAST, AIM_TYP_HEARTBEAT)) {
+    if (!g_aim.sendTimedPkt(networkNowMs, payload, AIM_DEST_BROADCAST, AIM_TYP_HEARTBEAT)) {
       LOG_ERROR("Heartbeat TX failed");
     } else {
       LOG_DEBUG("Heartbeat TX ok");
@@ -159,11 +162,6 @@ void runStateMachine(uint32_t schedulerNowMs, uint32_t networkNowMs) {
 
   nodeUpdate(schedulerNowMs);
   serviceCanTx(schedulerNowMs, networkNowMs);
-}
-
-void nodeUpdate(uint32_t schedulerNowMs) {
-  // NODE EXTENSION POINT: add recurring node logic here.
-  (void)schedulerNowMs;
 }
 
 void setup(void) {

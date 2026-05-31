@@ -48,11 +48,11 @@ bool AimNetwork::sendPkt64(uint64_t data, uint8_t dest, uint8_t type) {
   return sendPkt(pkt);
 }
 
-bool AimNetwork::sendPkt32(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type) {
-  return sendPkt32Ex(0U, ms, payload, dest, type);
+bool AimNetwork::sendTimedPkt(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type) {
+  return sendTimedPktEx(0U, ms, payload, dest, type);
 }
 
-bool AimNetwork::sendPkt32Ex(uint32_t endpointId, uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type) {
+bool AimNetwork::sendTimedPktEx(uint8_t endpointId, uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type) {
   if ((dest > AIM_DEST_ADDR_MAX) || (type > AIM_TYP_ADDR_MAX)) {
     LOG_ERROR("AimNetwork send failed: invalid dest/type (dest=0x%02X type=0x%02X)",
               static_cast<unsigned int>(dest),
@@ -61,20 +61,20 @@ bool AimNetwork::sendPkt32Ex(uint32_t endpointId, uint32_t ms, uint32_t payload,
   }
 
   if (endpointId > AIM_PKT_TIMED_ENDPOINT_MAX) {
-    LOG_ERROR("AimNetwork sendPkt32Ex failed: endpointId exceeds %u (endpointId=%u)",
+    LOG_ERROR("AimNetwork sendTimedPktEx failed: endpointId exceeds %u (endpointId=%u)",
               static_cast<unsigned int>(AIM_PKT_TIMED_ENDPOINT_MAX),
               static_cast<unsigned int>(endpointId));
     return false;
   }
 
   if (ms > AIM_PKT_TIMED_MILLIS_MAX) {
-    LOG_ERROR("AimNetwork sendPkt32Ex failed: ms exceeds %lu (ms=%lu)",
+    LOG_ERROR("AimNetwork sendTimedPktEx failed: ms exceeds %lu (ms=%lu)",
               static_cast<unsigned long>(AIM_PKT_TIMED_MILLIS_MAX),
               static_cast<unsigned long>(ms));
     return false;
   }
 
-  return sendPkt64(aimPkt::packDataEx(endpointId, ms, payload), dest, type);
+  return sendPkt64(aimPkt::packTimeDataEx(endpointId, ms, payload), dest, type);
 }
 
 bool AimNetwork::readPkt(aimPkt& pkt) {
