@@ -1,39 +1,26 @@
 #include "node.h"
+#include "console.h"
 
 #include <esp_idf_version.h>
 #include <esp_task_wdt.h>
 #include <logger.h>
-#include <SoftwareSerial.h>
 
-static constexpr uint32_t kHeartbeatTxIntervalMs = AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS;
-static constexpr uint32_t kWatchdogTimeoutMs = 2000U;
+static constexpr uint32_t kWatchdogTimeoutMs = 20000U;
 static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
-static constexpr uint8_t kTrackedNodeCount = 6U;
 
 struct NodeSchedulerState {
   NodeState value = INIT;
   uint32_t lastHeartbeatTxMs = 0U;
 };
 
-static const uint8_t kTrackedNodeOrigins[kTrackedNodeCount] = {
-  AIM_ORG_COMMS,
-  AIM_ORG_UPROP,
-  AIM_ORG_LPROP,
-  AIM_ORG_ALT,
-  AIM_ORG_GPS,
-  AIM_ORG_PWR
-};
-
 static AimCanDriver g_canHw(NODE_ORIGIN, NODE_CAN_BAUD, NODE_CAN_RX_PIN, NODE_CAN_TX_PIN);
 static AimNetwork g_aim(&g_canHw, NODE_ORIGIN);
-static AimNodeHealth g_nodeHealth[kTrackedNodeCount] = {};
-static bool g_lastAliveSnapshot[kTrackedNodeCount] = {};
+
 static NodeSchedulerState g_schedulerState = {};
 static bool g_watchdogReady = false;
-static SoftwareSerial g_serial(NODE_SERIAL_RX_PIN, NODE_SERIAL_TX_PIN);
-static Logger g_log(g_serial, NODE_ORIGIN, LogLevel::INFO);
+static Logger g_log(Serial, NODE_ORIGIN, LogLevel::INFO);
 
-void init_watchdog(void) {
+void initWatchdog(void) {
 #if ESP_IDF_VERSION_MAJOR >= 5
   const esp_task_wdt_config_t config = {
     .timeout_ms = kWatchdogTimeoutMs,
@@ -58,7 +45,7 @@ void init_watchdog(void) {
   LOG_INFO("Watchdog ready");
 }
 
-void kick_watchdog(void) {
+void kickWatchdog(void) {
   if (!g_watchdogReady) {
     return;
   }
@@ -70,28 +57,7 @@ void kick_watchdog(void) {
   }
 }
 
-void init_node_health(uint32_t networkNowMs) {
-  if (NODE_ENABLE_HEALTH_MONITOR == 0U) {
-    LOG_INFO("Node-health monitor disabled");
-    return;
-  }
-
-  const bool configured = g_aim.configureHealthMonitor(
-      kTrackedNodeOrigins,
-      kTrackedNodeCount,
-      g_nodeHealth,
-      NODE_HEALTH_TIMEOUT_MS,
-      networkNowMs);
-  AIM_ASSERT(configured);
-
-  for (uint8_t i = 0U; i < kTrackedNodeCount; i++) {
-    g_lastAliveSnapshot[i] = g_nodeHealth[i].alive;
-  }
-
-  LOG_INFO("Node-health monitor enabled (%u tracked)", static_cast<unsigned>(kTrackedNodeCount));
-}
-
-void service_can_rx(uint32_t networkNowMs) {
+void serviceCanRx(uint32_t networkNowMs) {
   // Handle incoming bus messages and custom packet branches here.
   for (uint8_t i = 0U; i < kMaxRxFramesPerLoop; i++) {
     aimPkt pkt = {};
@@ -101,49 +67,22 @@ void service_can_rx(uint32_t networkNowMs) {
 
     if (pkt.type == AIM_TYP_TIME) {
       g_aim.syncTime(static_cast<uint32_t>(pkt.getPayload64()));
+      LOG_DEBUG("Time sync received: networkNowMs=%u", networkNowMs);
     }
-    if (pkt.type == AIM_TYP_HEARTBEAT) {
-      g_aim.updateHealthOnHeartbeat(pkt.origin, networkNowMs);
-    }
+
+    // Route node-specific packets to node.cpp for processing.
+    (void)nodeHandleCanPacket(pkt, networkNowMs, g_aim);
   }
 }
 
-void service_node_health_monitor(uint32_t networkNowMs) {
-  if (NODE_ENABLE_HEALTH_MONITOR == 0U) {
-    return;
-  }
-
-  g_aim.evaluateHealth(networkNowMs);
-  for (uint8_t i = 0U; i < kTrackedNodeCount; i++) {
-    const AimNodeHealth& health = g_nodeHealth[i];
-    const uint8_t origin = health.origin;
-    if (origin == NODE_ORIGIN) {
-      continue;
-    }
-
-    if (health.alive == g_lastAliveSnapshot[i]) {
-      continue;
-    }
-
-    g_lastAliveSnapshot[i] = health.alive;
-    if (health.alive) {
-      LOG_INFO("Node %u is ALIVE", static_cast<unsigned>(origin));
-    } else {
-      LOG_WARN("Node %u is MISSING", static_cast<unsigned>(origin));
-    }
-  }
-}
-
-void service_tx(uint32_t networkNowMs) {
+void serviceTx(uint32_t schedulerNowMs, uint32_t networkNowMs) {
   // Add periodic transmit-side behavior in this service pattern.
-  const uint32_t scheduleNowMs = millis();
 
   // TX SECTION 1: node heartbeat.
-  if ((scheduleNowMs - g_schedulerState.lastHeartbeatTxMs) >= kHeartbeatTxIntervalMs) {
-    g_schedulerState.lastHeartbeatTxMs = scheduleNowMs;
+  if ((schedulerNowMs - g_schedulerState.lastHeartbeatTxMs) >= AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS) {
+    g_schedulerState.lastHeartbeatTxMs = schedulerNowMs;
     const uint32_t payload = static_cast<uint32_t>(g_schedulerState.value);
-    const bool heartbeatSent = g_aim.sendPkt32(networkNowMs, payload, AIM_DEST_BROADCAST, AIM_TYP_HEARTBEAT);
-    if (!heartbeatSent) {
+    if (!g_aim.sendTimedPkt(networkNowMs, payload, AIM_DEST_BROADCAST, AIM_TYP_HEARTBEAT)) {
       LOG_ERROR("Heartbeat TX failed");
     } else {
       LOG_DEBUG("Heartbeat TX ok");
@@ -154,58 +93,127 @@ void service_tx(uint32_t networkNowMs) {
   // TX SECTION 3: reserved for future periodic TX behavior.
 }
 
-void run_state_machine(uint32_t networkNowMs) {
-  if (g_schedulerState.value > FAULT) {
-    g_schedulerState.value = FAULT;
+void runStateMachine(uint32_t schedulerNowMs, uint32_t networkNowMs) {
+  AIM_ASSERT(g_schedulerState.value <= FAULT);  // precondition: corrupted state → reset
+
+  switch (g_schedulerState.value) {
+    case OPERATIONAL: {
+#ifndef FLIGHT_BUILD
+      const ConsoleAction act = consoleCheckEntry();
+      if (act == CONSOLE_ACTION_ENTER) {
+        g_schedulerState.value = DEBUG_CONSOLE;
+      }
+#endif
+      break;
+    }
+
+#ifndef FLIGHT_BUILD
+    case DEBUG_CONSOLE: {
+      const ConsoleAction act = consoleService(
+          static_cast<uint8_t>(g_schedulerState.value), networkNowMs);
+      if (act == CONSOLE_ACTION_EXIT) {
+        g_schedulerState.value = OPERATIONAL;
+      } else if (act == CONSOLE_ACTION_FLASH_INFO) {
+        // g_flashTable.commandInfo(&Serial);
+      } else if (act == CONSOLE_ACTION_FLASH_DUMP) {
+        // if (g_flashTable.commandDump(&Serial, 512U, nullptr, nullptr)) {
+        //   g_schedulerState.value = FLASH_DUMP;
+        //   Serial.print("state=");
+        //   Serial.println(static_cast<unsigned>(FLASH_DUMP));
+        // }
+      } else if (act == CONSOLE_ACTION_FLASH_ERASE) {
+        // g_flashTable.commandErase(&Serial);
+        // g_schedulerState.value = FLASH_ERASE;
+      }
+      break;
+    }
+
+    case FLASH_DUMP: {
+      // if (Serial.available() > 0) {
+      //   const int c = Serial.read();
+      //   if (c == 'q' || c == 'Q') {
+      //     g_flashTable.cancelDump();
+      //     Serial.println("flash dump canceled");
+      //     g_schedulerState.value = DEBUG_CONSOLE;
+      //     Serial.print("state=");
+      //     Serial.println(static_cast<unsigned>(DEBUG_CONSOLE));
+      //     consoleResume();
+      //     break;
+      //   }
+      // }
+
+      // const FlashTableServiceResult r = g_flashTable.serviceDump(&Serial, 16U);
+      // if (r != FLASHTABLE_SERVICE_ACTIVE) {
+      //   static const char* const kDumpMsg[] = {
+      //     "flash dump idle",
+      //     nullptr,
+      //     "flash dump done",
+      //     "flash dump aborted",
+      //     "flash dump error"
+      //   };
+      //   const uint8_t idx = static_cast<uint8_t>(r);
+      //   if (idx < 5U && kDumpMsg[idx] != nullptr) {
+      //     Serial.println(kDumpMsg[idx]);
+      //   }
+      //   g_schedulerState.value = DEBUG_CONSOLE;
+      //   Serial.print("state=");
+      //   Serial.println(static_cast<unsigned>(DEBUG_CONSOLE));
+      //   consoleResume();
+      // }
+      break;
+    }
+
+    case FLASH_ERASE: {
+      // const FlashTableServiceResult r = g_flashTable.serviceErase();
+      // if (r != FLASHTABLE_SERVICE_ACTIVE) {
+      //   Serial.println(r == FLASHTABLE_SERVICE_DONE ? "flash erase done" : "flash erase error");
+      //   g_schedulerState.value = DEBUG_CONSOLE;
+      //   consoleResume();
+      // }
+      break;
+    }
+#endif
+
+    case SAFE_MODE:
+    case LOW_POWER:
+    case FAULT:
+      break;
+
+    default:
+      AIM_ASSERT(false);  // unreachable — all valid states handled above
+      break;
   }
 
-  AIM_ASSERT(g_schedulerState.value <= FAULT);
-  if (g_schedulerState.value == INIT) {
-    board_init();
-    g_schedulerState.lastHeartbeatTxMs = millis();
-    g_schedulerState.value = OPERATIONAL;
-    LOG_INFO("State transition INIT -> OPERATIONAL");
-    return;
-  }
-
-  service_node_health_monitor(networkNowMs);
-  board_update(g_schedulerState.value);
-  service_tx(networkNowMs);
-}
-
-void board_init(void) {
-  // BOARD EXTENSION POINT: add one-time board setup here.
-  AIM_ASSERT(NODE_ORIGIN <= AIM_ORG_ADDR_MAX);
-}
-
-void board_update(NodeState state) {
-  // BOARD EXTENSION POINT: add recurring board logic here.
-  AIM_ASSERT(state <= FAULT);
-  (void)state;
+  nodeUpdate(schedulerNowMs);
+  serviceTx(schedulerNowMs, networkNowMs);
 }
 
 void setup(void) {
   AIM_ASSERT(NODE_ORIGIN <= AIM_ORG_ADDR_MAX);
-  g_serial.begin(NODE_SERIAL_BAUD);
+  Serial.begin(NODE_SERIAL_BAUD);
   g_logger = &g_log;
   LOG_INFO("Boot node origin=%u", static_cast<unsigned>(NODE_ORIGIN));
-  init_watchdog();
+  initWatchdog();
+
   g_aim.begin();
 
-  const uint32_t networkNowMs = g_aim.syncedMillis();
-  init_node_health(networkNowMs);
-  if (g_schedulerState.value != FAULT) {
-    g_schedulerState.value = INIT;
-  }
+#ifndef FLIGHT_BUILD
+  consoleInit(Serial, g_aim, g_log);
+#endif
+
+#ifndef FLIGHT_BUILD
+  Serial.println("Console ready. d=enter debug");
+#endif
+  g_schedulerState.lastHeartbeatTxMs = millis();
+  g_schedulerState.value = OPERATIONAL;
 }
 
 void loop(void) {
-  AIM_ASSERT(g_schedulerState.value <= FAULT);
-
+  const uint32_t schedulerNowMs = millis();
   const uint32_t networkNowMs = g_aim.syncedMillis();
   // Main scheduler order: RX, state machine, watchdog.
-  service_can_rx(networkNowMs);
-  run_state_machine(networkNowMs);
+  serviceCanRx(networkNowMs);
+  runStateMachine(schedulerNowMs, networkNowMs);
 
-  kick_watchdog();
+  kickWatchdog();
 }
