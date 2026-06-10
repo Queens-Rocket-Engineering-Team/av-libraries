@@ -29,6 +29,22 @@ class AimFlightRecorder {
    */
   bool syncLog();
 
+  /**
+   * @brief Syncs and closes the active log file handle.
+   *
+   * Must be called before AimFileSystem::format() — formatting while the
+   * handle is open leaves it stale and the next writeRow() trips a littlefs
+   * assert. Resets RDES state so the next writeRow() starts a fresh log with
+   * a raw origin row. Safe to call when no log file is open.
+   * @return true if closed cleanly (or nothing was open).
+   */
+  bool closeLog();
+
+  /**
+   * @brief Checks if the log file handle is currently open.
+   */
+  bool isLogging() const { return _logFileOpen; }
+
   // --- Watchdog-Safe Streaming Dump ---
 
   /**

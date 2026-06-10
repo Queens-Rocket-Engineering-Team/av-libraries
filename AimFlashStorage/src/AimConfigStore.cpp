@@ -4,22 +4,34 @@
 AimConfigStore::AimConfigStore(AimFileSystem& fs) : _fs(fs) {}
 
 bool AimConfigStore::load(const char* path, JsonDocument& doc) {
+  return loadDetailed(path, doc) == AimConfigLoad::OK;
+}
+
+AimConfigLoad AimConfigStore::loadDetailed(const char* path, JsonDocument& doc) {
   if (!_fs.isReady()) {
-    return false;
+    return AimConfigLoad::STORAGE_NOT_READY;
   }
 
   lfs_t* lfs = _fs.getLfs();
   lfs_file_t file;
 
   int err = lfs_file_open(lfs, &file, path, LFS_O_RDONLY);
+  if (err == LFS_ERR_NOENT) {
+    return AimConfigLoad::NOT_PRESENT;
+  }
   if (err != LFS_ERR_OK) {
-    return false;
+    LOG_ERROR("Config open failed for %s (%d)", path, err);
+    return AimConfigLoad::READ_FAILED;
   }
 
   lfs_soff_t size = lfs_file_size(lfs, &file);
-  if (size <= 0) {
+  if (size == 0) {
     lfs_file_close(lfs, &file);
-    return false;
+    return AimConfigLoad::NOT_PRESENT;
+  }
+  if (size < 0) {
+    lfs_file_close(lfs, &file);
+    return AimConfigLoad::READ_FAILED;
   }
 
   char buf[512];
@@ -27,7 +39,7 @@ bool AimConfigStore::load(const char* path, JsonDocument& doc) {
   if ((size_t)size >= sizeof(buf)) {
     LOG_ERROR("Config file %s too large (%d bytes)", path, (int)size);
     lfs_file_close(lfs, &file);
-    return false;
+    return AimConfigLoad::READ_FAILED;
   }
 
   lfs_ssize_t read = lfs_file_read(lfs, &file, buf, size);
@@ -35,7 +47,7 @@ bool AimConfigStore::load(const char* path, JsonDocument& doc) {
 
   if (read != size) {
     LOG_ERROR("Config read failed for %s", path);
-    return false;
+    return AimConfigLoad::READ_FAILED;
   }
 
   buf[read] = '\0';
@@ -43,10 +55,10 @@ bool AimConfigStore::load(const char* path, JsonDocument& doc) {
   DeserializationError error = deserializeJson(doc, buf);
   if (error) {
     LOG_ERROR("JSON parse failed for %s: %s", path, error.c_str());
-    return false;
+    return AimConfigLoad::PARSE_FAILED;
   }
 
-  return true;
+  return AimConfigLoad::OK;
 }
 
 bool AimConfigStore::save(const char* path, const JsonDocument& doc) {

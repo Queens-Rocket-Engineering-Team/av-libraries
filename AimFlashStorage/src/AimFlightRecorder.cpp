@@ -27,10 +27,18 @@ AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_
 
 AimFlightRecorder::~AimFlightRecorder() {
   stopDump();
-  if (_logFileOpen) {
-    lfs_file_close(_fs.getLfs(), &_logFile);
-    _logFileOpen = false;
-  }
+  closeLog();
+}
+
+bool AimFlightRecorder::closeLog() {
+  if (!_logFileOpen) return true;
+
+  const int err = lfs_file_close(_fs.getLfs(), &_logFile);
+  _logFileOpen = false;
+  _syncCounter = 0;
+  _rowsSinceRaw = 0;
+  _rdesInitialized = false;  // next writeRow() emits a raw origin row
+  return err == LFS_ERR_OK;
 }
 
 bool AimFlightRecorder::syncLog() {
