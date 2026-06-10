@@ -1,6 +1,6 @@
 {
-  "name": "AimFlashTable",
-  "version": "0.1.0",
+  "name": "AimFlashStorage",
+  "version": "0.2.0",
   "description": "Flash Storage and Compression Library",
   "keywords": "flash, storage, logging",
   "repository": {
@@ -15,13 +15,23 @@
   ],
   "frameworks": "arduino",
   "platforms": [
-    "ststm32"
+    "espressif32"
   ],
+  "build": {
+    "srcFilter": [
+      "+<*>"
+    ]
+  },
   "dependencies": [
     {
       "owner": "paulstoffregen",
       "name": "SerialFlash",
       "version": "*"
+    },
+    {
+      "owner": "bblanchon",
+      "name": "ArduinoJson",
+      "version": "^7.0.0"
     }
   ]
 }

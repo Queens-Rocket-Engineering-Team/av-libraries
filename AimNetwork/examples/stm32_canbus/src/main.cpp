@@ -175,7 +175,7 @@ void setup(void) {
   g_aim.begin();
 
 #ifndef FLIGHT_BUILD
-  consoleInit(g_serial, g_aim, g_log);
+  consoleInit(g_serial, g_aim, g_canHw, g_log);
 #endif
 
   // NODE EXTENSION POINT: add one-time node setup here.

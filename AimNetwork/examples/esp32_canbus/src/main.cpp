@@ -198,7 +198,7 @@ void setup(void) {
   g_aim.begin();
 
 #ifndef FLIGHT_BUILD
-  consoleInit(Serial, g_aim, g_log);
+  consoleInit(Serial, g_aim, g_canHw, g_log);
 #endif
 
 #ifndef FLIGHT_BUILD

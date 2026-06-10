@@ -5,18 +5,21 @@
 #include "node.h"
 
 #include <aim_network.h>
+#include <aim_can_driver.h>
 #include <logger.h>
 
 enum ConsoleMenu : uint8_t {
   CONSOLE_MENU_ROOT      = 0U,
   CONSOLE_MENU_LOG_MASK  = 1U,
   CONSOLE_MENU_FLASH     = 2U,
-  CONSOLE_MENU_FLASH_ERASE_CONFIRM = 3U
+  CONSOLE_MENU_FLASH_ERASE_CONFIRM = 3U,
+  CONSOLE_MENU_CAN      = 4U
   // add more menus as needed
 };
 
 static Stream* s_serial = nullptr;
 static AimNetwork* s_aim = nullptr;
+static AimCanDriver* s_canDriver = nullptr;
 static Logger* s_log = nullptr;
 static ConsoleMenu s_menu = CONSOLE_MENU_ROOT;
 
@@ -51,7 +54,7 @@ static void showMenu(ConsoleMenu menu) { // All menu prints located here, add mo
   switch (menu) { 
     case CONSOLE_MENU_ROOT:
       s_serial->println("DEBUG: q exit | b back");
-      s_serial->println("1 status | 2 log | 3 flash");
+      s_serial->println("1 status | 2 log | 3 flash | 4 CAN");
       break;
     case CONSOLE_MENU_LOG_MASK:
       s_serial->println("LOG mask: q exit | b back");
@@ -66,13 +69,45 @@ static void showMenu(ConsoleMenu menu) { // All menu prints located here, add mo
       s_serial->println("FLASH ERASE: q exit | b back");
       s_serial->println("1 confirm");
       break;
+    case CONSOLE_MENU_CAN:
+      AIM_ASSERT(s_canDriver != nullptr);
+      s_serial->println("\n=== CAN Driver Status ===");
+#if defined(ARDUINO_ARCH_ESP32)
+      {
+        AimEsp32CanCore::Stats stats = {};
+        s_canDriver->getEsp32Stats(stats);
+        s_serial->print("txFrames: "); s_serial->println(stats.txFrames);
+        s_serial->print("rxFrames: "); s_serial->println(stats.rxFrames);
+        s_serial->print("txErrors: "); s_serial->println(stats.txErrors);
+        s_serial->print("rxErrors: "); s_serial->println(stats.rxErrors);
+        s_serial->print("filteredFrames: "); s_serial->println(stats.filteredFrames);
+        s_serial->print("beginErrors: "); s_serial->println(stats.beginErrors);
+        s_serial->print("lastError: 0x"); s_serial->println(stats.lastError, HEX);
+      }
+#elif defined(ARDUINO_ARCH_STM32)
+      {
+        AimStm32CanCore::Stats stats = {};
+        s_canDriver->getStm32Stats(stats);
+        s_serial->print("txHalErrors: "); s_serial->println(stats.txHalErrors);
+        s_serial->print("rxHalErrors: "); s_serial->println(stats.rxHalErrors);
+        s_serial->print("txQueueDrops: "); s_serial->println(stats.txQueueDrops);
+        s_serial->print("busOffEvents: "); s_serial->println(stats.busOffEvents);
+        s_serial->print("errorWarningEvents: "); s_serial->println(stats.errorWarningEvents);
+        s_serial->print("errorPassiveEvents: "); s_serial->println(stats.errorPassiveEvents);
+        s_serial->print("lastHalError: 0x"); s_serial->println(stats.lastHalError, HEX);
+      }
+#else
+      s_serial->println("CAN stats unavailable on this platform");
+#endif
+      s_serial->println("CAN: q exit | b back | 1 refresh");
+      break;
 
     // add additional menu prints here
 
     default:
       s_menu = CONSOLE_MENU_ROOT;
       s_serial->println("DEBUG: q exit | b back");
-      s_serial->println("1 status | 2 log | 3 flash");
+      s_serial->println("1 status | 2 log | 3 flash | 4 CAN");
       break;
   }
 }
@@ -121,9 +156,11 @@ static void setLogMask(uint8_t mask, const char* label) {
 
 void consoleInit(Stream& serial,
                  AimNetwork& aim,
+                 AimCanDriver& canDriver,
                  Logger& log) {
   s_serial = &serial;
   s_aim = &aim;
+  s_canDriver = &canDriver;
   s_log = &log;
   s_menu = CONSOLE_MENU_ROOT;
 }
@@ -166,6 +203,9 @@ ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs) {
           break;
         case '3':
           showMenu(CONSOLE_MENU_FLASH);
+          break;
+        case '4':
+          showMenu(CONSOLE_MENU_CAN);
           break;
         default:
           showMenu(CONSOLE_MENU_ROOT);
@@ -238,6 +278,20 @@ ConsoleAction consoleService(uint8_t currentState, uint32_t networkNowMs) {
           break;
         default:
           showMenu(CONSOLE_MENU_FLASH_ERASE_CONFIRM);
+          break;
+      }
+      break;
+
+    case CONSOLE_MENU_CAN:
+      switch (c) {
+        case 'b':
+          showMenu(CONSOLE_MENU_ROOT);
+          break;
+        case '1':
+          showMenu(CONSOLE_MENU_CAN);
+          break;
+        default:
+          showMenu(CONSOLE_MENU_CAN);
           break;
       }
       break;

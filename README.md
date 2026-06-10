@@ -8,7 +8,7 @@ These libraries support our STM32 nodes and the ESP32 comms board. They handle t
 
 - **AimNetwork**: Manages CAN bus communication, time synchronization, and network health monitoring seamlessly in the background.
 - **AimLogger**: A lightweight logger that automatically adds timestamps and severity levels (like `DEBUG` or `ERROR`) to your messages.
-- **AimFlashTable**: Stores data directly to the board's serial flash memory. Includes a Python tool for extracting data post-flight.
+- **AimFlashStorage**: Stores data directly to the board's serial flash memory or internal flash using littlefs. Includes RDES compression for telemetry.
 
 ## Setup & Build
 
