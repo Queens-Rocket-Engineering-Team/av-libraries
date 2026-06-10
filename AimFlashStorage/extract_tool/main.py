@@ -19,6 +19,12 @@ BAUD_RATE = 115200
 DEFAULT_PORT = "/dev/ttyUSB0"
 TIMEOUT = 0.5
 
+# Dump wire-protocol bytes — must match AimFlightRecorder.h
+# (kDumpStartChar / kDumpCmdNext / kDumpCmdResend).
+DUMP_START = b'#'
+DUMP_CMD_NEXT = b'N'
+DUMP_CMD_RESEND = b'L'
+
 def connect_to_board(port=DEFAULT_PORT):
     print(f"Connecting to {port}...")
     try:
@@ -139,12 +145,12 @@ def retrieve_board_flash(device):
         raise IOError("No 'FLS [' prompt")
 
     device.write(b'2') # Dump
-    # Handshake starts with '#' — bounded wait so a failed dump start
+    # Handshake starts with DUMP_START — bounded wait so a failed dump start
     # ("[ERR] dump failed to start") can't hang us forever
     start = time.time()
     while True:
         c = device.read()
-        if c == b'#':
+        if c == DUMP_START:
             break
         if time.time() - start > 5.0:
             raise IOError("No dump handshake ('#') from board")
@@ -157,7 +163,7 @@ def retrieve_board_flash(device):
     print(f"Downloading {num_real_bytes}B ({num_blocks} blocks of {block_size}B)")
     
     raw_payload = bytearray()
-    device.write(b'N') # ACK start
+    device.write(DUMP_CMD_NEXT) # ACK start
     
     start_time = time.time()
     for b in range(num_blocks):
@@ -174,12 +180,12 @@ def retrieve_board_flash(device):
             if retries > 5:
                 raise IOError(f"Block {b}: got {len(block)}/{block_size}B after {retries - 1} retries")
             device.reset_input_buffer()
-            device.write(b'L')
+            device.write(DUMP_CMD_RESEND)
             block = device.read(block_size)
 
         raw_payload.extend(block)
-        # Ack every block — the final 'N' tells the board the dump is complete
-        device.write(b'N')
+        # Ack every block — the final ack tells the board the dump is complete
+        device.write(DUMP_CMD_NEXT)
             
     elapsed = time.time() - start_time
     speed = (num_real_bytes / elapsed) / 1024 if elapsed > 0 else 0

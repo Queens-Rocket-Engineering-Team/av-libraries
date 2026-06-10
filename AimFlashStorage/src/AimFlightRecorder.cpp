@@ -21,7 +21,8 @@ AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_
       _dumpTotalBytes(0),
       _dumpCurrentBlock(0),
       _dumpCurrentBlockOffset(0),
-      _dumpLastPos(0) {
+      _dumpLastPos(0),
+      _savedLogMask(0) {
   memset(_lastVals, 0, sizeof(_lastVals));
 }
 
@@ -159,8 +160,15 @@ bool AimFlightRecorder::startDump(Stream* stream) {
   _dumpStream = stream;
   _dumping = true;
 
+  // Mute async logging before the handshake byte — a LOG_* line interleaved
+  // with the binary block stream corrupts it. Restored in stopDump().
+  if (g_logger != nullptr) {
+    _savedLogMask = g_logger->filterMask();
+    g_logger->setFilterMask(0U);
+  }
+
   // MDE Handshake: 1 byte start '#' + 2 byte blockSize + 2 byte numBlocks + 4 byte totalBytes
-  _dumpStream->write('#');
+  _dumpStream->write(kDumpStartChar);
   _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpBlockSize), 2);
   _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpNumBlocks), 2);
   _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpTotalBytes), 4);
@@ -176,7 +184,7 @@ bool AimFlightRecorder::serviceDump(size_t maxBytes) {
     char cmd = _dumpStream->read();
     lfs_t* lfs = _fs.getLfs();
 
-    if (cmd == 'N') { // Next block
+    if (cmd == kDumpCmdNext) { // Next block
       if (_dumpCurrentBlock >= _dumpNumBlocks) {
         stopDump();
         return false;
@@ -184,7 +192,7 @@ bool AimFlightRecorder::serviceDump(size_t maxBytes) {
       _dumpLastPos = lfs_file_tell(lfs, &_dumpFile);
       _dumpCurrentBlock++;
       _dumpCurrentBlockOffset = 0;
-    } else if (cmd == 'L') { // Last block (resend)
+    } else if (cmd == kDumpCmdResend) { // Last block (resend)
       lfs_file_seek(lfs, &_dumpFile, _dumpLastPos, LFS_SEEK_SET);
       _dumpCurrentBlockOffset = 0;
     }
@@ -230,5 +238,8 @@ void AimFlightRecorder::stopDump() {
     lfs_file_close(_fs.getLfs(), &_dumpFile);
     _dumping = false;
     _dumpStream = nullptr;
+    if (g_logger != nullptr) {
+      g_logger->setFilterMask(_savedLogMask);
+    }
   }
 }

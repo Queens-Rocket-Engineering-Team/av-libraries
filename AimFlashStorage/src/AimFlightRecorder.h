@@ -14,6 +14,11 @@ class AimFlightRecorder {
  public:
   static constexpr uint8_t MAX_COLUMNS = 16;
 
+  // Dump wire protocol — shared contract with extract_tool/main.py.
+  static constexpr char kDumpStartChar = '#';   // device: handshake start byte
+  static constexpr char kDumpCmdNext   = 'N';   // host: ack block / request next
+  static constexpr char kDumpCmdResend = 'L';   // host: resend last block
+
   AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt, uint32_t maxLogSize);
   ~AimFlightRecorder();
 
@@ -49,6 +54,10 @@ class AimFlightRecorder {
 
   /**
    * @brief Opens the log file for reading and starts a streaming dump.
+   *
+   * Mutes the global logger for the duration of the dump — an async LOG_*
+   * line interleaved with the binary block stream corrupts it (no
+   * checksums). stopDump() restores the previous log mask.
    * @param stream The serial stream to dump hex data to.
    * @return true if started successfully.
    */
@@ -103,6 +112,7 @@ class AimFlightRecorder {
   uint16_t _dumpCurrentBlock;
   uint16_t _dumpCurrentBlockOffset;
   lfs_soff_t _dumpLastPos;
+  uint8_t _savedLogMask;
 
   static const char* kLogPath;
 
