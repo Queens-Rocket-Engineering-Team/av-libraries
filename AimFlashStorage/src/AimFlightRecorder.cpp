@@ -208,7 +208,14 @@ bool AimFlightRecorder::serviceDump(size_t maxBytes) {
     toRead = std::min(toRead, (size_t)(_dumpBlockSize - _dumpCurrentBlockOffset));
     
     lfs_ssize_t read = lfs_file_read(lfs, &_dumpFile, buf, toRead);
-    if (read <= 0) break;
+    if (read < 0) break;
+    if (read == 0) {
+      // EOF inside the final block: pad to the fixed block size. The host
+      // reads exactly blockSize per block and trims to totalBytes at the end;
+      // a short final block leaves it waiting (resend-retry) forever.
+      memset(buf, 0xFF, toRead);
+      read = static_cast<lfs_ssize_t>(toRead);
+    }
 
     _dumpStream->write(buf, read);
     totalSent += read;

@@ -23,14 +23,27 @@ def connect_to_board(port=DEFAULT_PORT):
     print(f"Connecting to {port}...")
     try:
         device = Serial(port, baudrate=BAUD_RATE, timeout=TIMEOUT)
-        # Force entry into console if not already there
-        device.write(b'\x01')
         time.sleep(0.5)
         device.read_all() # Clear buffer
         return device
     except Exception as e:
         print(f"Failed to connect: {e}")
         return None
+
+def enter_console_root(device):
+    """Returns the console to the root DBG menu from any state.
+
+    'q' exits the console if it was active (ignored otherwise); console
+    entry then requires a DOUBLE Ctrl-A within the firmware's 750 ms
+    guard window — a single press only arms the guard.
+    """
+    device.write(b'q')
+    time.sleep(0.1)
+    device.write(b'\x01')
+    time.sleep(0.1)
+    device.write(b'\x01')
+    if wait_for_prompt(device, "DBG [") is None:
+        raise IOError("Console entry failed: no 'DBG [' prompt")
 
 def wait_for_prompt(device, prompt, timeout=2.0):
     start = time.time()
@@ -45,12 +58,8 @@ def wait_for_prompt(device, prompt, timeout=2.0):
 
 def get_board_info(device):
     """Navigates menus to find board name, flash usage, and telemetry schema."""
-    # Go to root
-    device.write(b'q')
-    time.sleep(0.1)
-    device.write(b'\x01')
-    wait_for_prompt(device, "DBG [")
-    
+    enter_console_root(device)
+
     # Mute asynchronous logs to prevent UART corruption
     device.write(b'2') # LOG menu
     wait_for_prompt(device, "LOG [")
@@ -123,20 +132,22 @@ def get_board_info(device):
 
 def retrieve_board_flash(device):
     """Triggers the binary dump from the flash menu."""
-    device.write(b'q')
-    time.sleep(0.1)
-    device.write(b'\x01')
-    wait_for_prompt(device, "DBG [")
-    
+    enter_console_root(device)
+
     device.write(b'3') # Flash menu
-    wait_for_prompt(device, "FLS [")
-    
+    if wait_for_prompt(device, "FLS [") is None:
+        raise IOError("No 'FLS [' prompt")
+
     device.write(b'2') # Dump
-    # Handshake starts with '#'
+    # Handshake starts with '#' — bounded wait so a failed dump start
+    # ("[ERR] dump failed to start") can't hang us forever
+    start = time.time()
     while True:
         c = device.read()
         if c == b'#':
             break
+        if time.time() - start > 5.0:
+            raise IOError("No dump handshake ('#') from board")
             
     # Read binary handshake
     block_size = struct.unpack('H', device.read(2))[0]
@@ -155,14 +166,20 @@ def retrieve_board_flash(device):
             print(f"\rProgress: {prog:.1%} ", end="", flush=True)
             
         block = device.read(block_size)
+        retries = 0
         while len(block) < block_size:
-            # Simple retry for partial blocks
+            # Resend-retry for partial blocks, bounded so a protocol fault
+            # can't spin forever
+            retries += 1
+            if retries > 5:
+                raise IOError(f"Block {b}: got {len(block)}/{block_size}B after {retries - 1} retries")
+            device.reset_input_buffer()
             device.write(b'L')
             block = device.read(block_size)
-            
+
         raw_payload.extend(block)
-        if b < num_blocks - 1:
-            device.write(b'N')
+        # Ack every block — the final 'N' tells the board the dump is complete
+        device.write(b'N')
             
     elapsed = time.time() - start_time
     speed = (num_real_bytes / elapsed) / 1024 if elapsed > 0 else 0
@@ -172,11 +189,8 @@ def retrieve_board_flash(device):
 
 def erase_board_flash(device):
     """Navigates to the erase confirm menu."""
-    device.write(b'q')
-    time.sleep(0.1)
-    device.write(b'\x01')
-    wait_for_prompt(device, "DBG [")
-    
+    enter_console_root(device)
+
     device.write(b'3') # Flash
     wait_for_prompt(device, "FLS [")
     device.write(b'3') # Erase
