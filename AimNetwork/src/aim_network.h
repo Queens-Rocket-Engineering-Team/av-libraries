@@ -25,27 +25,27 @@
 
 // ── Packet Types (4-bit, 0x0->0xF) ──────────────────────────
 
-#define AIM_TYP_TIME      0x0
-#define AIM_TYP_SENSOR    0x1
-#define AIM_TYP_VALVE     0x2
-#define AIM_TYP_GPS_LAT   0x3
-#define AIM_TYP_GPS_LONG  0x4
-#define AIM_TYP_ALT       0x5
-#define AIM_TYP_LOWPW     0x6
-#define AIM_TYP_HEARTBEAT 0x7
-#define AIM_TYP_NODATA    0x8
-#define AIM_TYP_UNDEFINED 0xF
+#define AIM_TYPE_TIME      0x0
+#define AIM_TYPE_SENSOR    0x1
+#define AIM_TYPE_VALVE     0x2
+#define AIM_TYPE_GPS_LAT   0x3
+#define AIM_TYPE_GPS_LONG  0x4
+#define AIM_TYPE_ALT       0x5
+#define AIM_TYPE_LOWPW     0x6
+#define AIM_TYPE_HEARTBEAT 0x7
+#define AIM_TYPE_NODATA    0x8
+#define AIM_TYPE_UNDEFINED 0xF
 
 
 // ── Bit-width constants (used by driver for packing) ────────
 
 #define AIM_ORG_ADDR_SIZE  3
 #define AIM_DEST_ADDR_SIZE 3
-#define AIM_TYP_ADDR_SIZE  4
+#define AIM_TYPE_ADDR_SIZE  4
 
 #define AIM_ORG_ADDR_MAX   ((1U << AIM_ORG_ADDR_SIZE) - 1U)
 #define AIM_DEST_ADDR_MAX  ((1U << AIM_DEST_ADDR_SIZE) - 1U)
-#define AIM_TYP_ADDR_MAX   ((1U << AIM_TYP_ADDR_SIZE) - 1U)
+#define AIM_TYPE_ADDR_MAX   ((1U << AIM_TYPE_ADDR_SIZE) - 1U)
 
 
 // ── Timed data layout constants (for downstream validation) ──
@@ -63,7 +63,7 @@
 
 #define AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS 5000U
 
-#define AIM_NETWORK_VERSION_STRING "0.4.1"
+#define AIM_NETWORK_VERSION_STRING "0.4.2"
 
 
 // ── AIM Packet ───────────────────────────────────────────────
@@ -74,49 +74,47 @@ typedef struct aimPkt {
   uint8_t  padding : 5;
   uint8_t  origin  : AIM_ORG_ADDR_SIZE;
   uint8_t  dest    : AIM_DEST_ADDR_SIZE;
-  uint8_t  type    : AIM_TYP_ADDR_SIZE;
+  uint8_t  type    : AIM_TYPE_ADDR_SIZE;
   uint64_t data;
 
-  uint8_t getEndpointId() const {
-    return static_cast<uint8_t>((data >> AIM_PKT_TIMED_ENDPOINT_SHIFT) & (uint64_t)AIM_PKT_TIMED_ENDPOINT_MAX);
-  }
-  uint32_t getMillis()  const { return (uint32_t)((data >> AIM_PKT_TIMED_PAYLOAD_BITS) & (uint64_t)AIM_PKT_TIMED_MILLIS_MAX); }
-  uint32_t getPayload() const { return (uint32_t)(data & (uint64_t)AIM_PKT_TIMED_PAYLOAD_MAX); }
-  uint64_t getPayload64() const { return data; }
+  bool packData(uint8_t endpointId, uint32_t ms, uint32_t payload) {
+    if (endpointId > AIM_PKT_TIMED_ENDPOINT_MAX) {
+      return false;
+    }
 
-  static uint64_t packTimeDataEx(uint8_t endpointId, uint32_t ms, uint32_t payload) {
-    return (((uint64_t)endpointId & (uint64_t)AIM_PKT_TIMED_ENDPOINT_MAX) << AIM_PKT_TIMED_ENDPOINT_SHIFT) |
-           (((uint64_t)ms & (uint64_t)AIM_PKT_TIMED_MILLIS_MAX) << AIM_PKT_TIMED_PAYLOAD_BITS) |
-           ((uint64_t)payload & (uint64_t)AIM_PKT_TIMED_PAYLOAD_MAX);
+    if (ms > AIM_PKT_TIMED_MILLIS_MAX) {
+      return false;
+    }
+
+    data =
+      (((uint64_t)endpointId) << AIM_PKT_TIMED_ENDPOINT_SHIFT) |
+      (((uint64_t)ms) << AIM_PKT_TIMED_PAYLOAD_BITS) |
+      ((uint64_t)payload);
+
+    return true;
+  }
+
+  bool validate() const {
+    return origin <= AIM_ORG_ADDR_MAX &&
+           dest   <= AIM_DEST_ADDR_MAX &&
+           type   <= AIM_TYPE_ADDR_MAX;
+  }
+
+  uint8_t getEndpointId() const {
+    return (uint8_t)((data >> AIM_PKT_TIMED_ENDPOINT_SHIFT) & AIM_PKT_TIMED_ENDPOINT_MAX);
+  }
+
+  uint32_t getMillis() const {
+    return (uint32_t)((data >> AIM_PKT_TIMED_PAYLOAD_BITS) & AIM_PKT_TIMED_MILLIS_MAX);
+  }
+
+  uint32_t getPayload() const {
+    return (uint32_t)(data & AIM_PKT_TIMED_PAYLOAD_MAX);
   }
 
 } aimPkt;
 
-
-// ── Debug utility ────────────────────────────────────────────
-// Prints packet fields to any Stream (Serial, SoftwareSerial, etc.)
-
-inline void aimPrintPkt(Stream& out, const aimPkt& pkt, const char* label = "") {
-  if (label[0]) { out.print(label); out.print(" "); }
-  out.print("org=0x"); out.print(pkt.origin, HEX);
-  out.print(" dst=0x"); out.print(pkt.dest, HEX);
-  out.print(" typ=0x"); out.print(pkt.type, HEX);
-  out.print(" endpoint=0x");  out.print(pkt.getEndpointId(), HEX);
-  out.print(" pay=0x"); out.print(pkt.getPayload(), HEX);
-  out.print(" t=");     out.print(pkt.getMillis());
-  out.println("ms");
-}
-
 class AimCanDriver;
-
-struct AimNodeHealth {
-  uint8_t origin;
-  uint32_t lastHeartbeatMs;
-  bool alive;
-};
-
-
-// ── AimNetwork ───────────────────────────────────────────────
 
 class AimNetwork {
 public:
@@ -124,42 +122,16 @@ public:
 
   void begin();
 
-  // Send a pre-built packet
-  bool sendPkt(const aimPkt& pkt);
-
-  // Send with raw 64-bit data field
-  bool sendPkt64(uint64_t data, uint8_t dest, uint8_t type);
-
-  // Send timed payload (packs data for you).
-  // Uses endpointId=0 (default channel) for non-endpoint packet types.
-  bool sendTimedPkt(uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
-  bool sendTimedPktEx(uint8_t endpointId, uint32_t ms, uint32_t payload, uint8_t dest, uint8_t type);
-
+  bool sendPkt(aimPkt& pkt);
   bool readPkt(aimPkt& pkt);
 
   // Time sync — call when receiving a TIME packet
   void syncTime(uint32_t remoteMillis);
 
-  // Optional node-health monitor.
-  // Caller owns trackedOrigins/healthStorage memory and lifetime.
-  // Initializes monitor state for tracked nodes at nowMs.
-  bool configureHealthMonitor(const uint8_t* trackedOrigins,
-                              uint8_t trackedCount,
-                              AimNodeHealth* healthStorage,
-                              uint32_t heartbeatTimeoutMs,
-                              uint32_t nowMs);
-
-  void updateHealthOnHeartbeat(uint8_t origin, uint32_t nowMs);
-  void evaluateHealth(uint32_t nowMs);
-  const AimNodeHealth* getHealthForOrigin(uint8_t origin) const;
-
   // Returns local time adjusted by the last sync offset
   uint32_t syncedMillis() const;
 
-  int32_t getTimeOffset() const;
-
 private:
-  int16_t findHealthIndex(uint8_t origin) const;
 
   AimCanDriver* _hw;
   uint8_t _origin;
@@ -167,8 +139,6 @@ private:
 
   const uint8_t* _trackedOrigins;
   uint8_t _trackedCount;
-  AimNodeHealth* _healthTable;
-  uint32_t _heartbeatTimeoutMs;
 };
 
 #endif // AIM_NETWORK_H

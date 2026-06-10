@@ -2,4 +2,5 @@
 *.tmp
 
 #vscode config
-*.vscode
+*.vscode__pycache__/
+*.pyc

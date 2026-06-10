@@ -7,11 +7,11 @@ const char* Logger::levelToString(LogLevel level)
 {
     switch (level)
     {
-        case LogLevel::DEBUG: return "DEBUG";
-        case LogLevel::INFO:  return "INFO ";
-        case LogLevel::WARN:  return "WARN ";
-        case LogLevel::ERROR: return "ERROR";
-        default:              return "?????";
+        case LogLevel::DEBUG: return "D";
+        case LogLevel::INFO:  return "I";
+        case LogLevel::WARN:  return "W";
+        case LogLevel::ERROR: return "E";
+        default:              return "?";
     }
 }
 
@@ -33,7 +33,7 @@ void Logger::log(LogLevel level, const char* fmt, ...)
     int offset = snprintf(
         line,
         sizeof(line),
-        "[NODE:%u][%08lu][%s] ",
+        "N%u:%08lu:%s ",
         static_cast<unsigned>(node_id_),
         ts,
         levelToString(level)

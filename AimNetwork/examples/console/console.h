@@ -7,6 +7,7 @@
 #include <cstdint>
 
 class AimNetwork;
+class AimCanDriver;
 class Logger;
 
 enum ConsoleAction : uint8_t {
@@ -21,6 +22,7 @@ enum ConsoleAction : uint8_t {
 
 void consoleInit(Stream& serial,
                  AimNetwork& aim,
+                 AimCanDriver& canDriver,
                  Logger& log);
 
 ConsoleAction consoleCheckEntry(void);
