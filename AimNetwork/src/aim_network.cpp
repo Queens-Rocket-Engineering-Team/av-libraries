@@ -7,9 +7,7 @@
 AimNetwork::AimNetwork(AimCanDriver* hardware, uint8_t origin)
     : _hw(hardware),
       _origin(origin),
-      _timeOffset(0),
-      _trackedOrigins(nullptr),
-      _trackedCount(0U) {}
+      _timeOffset(0) {}
 
 void AimNetwork::begin() {
   if (_hw != nullptr) {

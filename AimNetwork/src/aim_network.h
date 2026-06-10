@@ -6,7 +6,7 @@
 #include <cstddef>
 
 
-// ── Module Addresses (3-bit, 0x0->0x7) ──────────────────────
+// --- Module Addresses (3-bit, 0x0->0x7) ---
 
 #define AIM_ORG_NOORG 0x0
 #define AIM_ORG_COMMS 0x1
@@ -23,7 +23,7 @@
 #define AIM_DEST_BROADCAST 0x7
 
 
-// ── Packet Types (4-bit, 0x0->0xF) ──────────────────────────
+// --- Packet Types (4-bit, 0x0->0xF) ---
 
 #define AIM_TYPE_TIME      0x0
 #define AIM_TYPE_SENSOR    0x1
@@ -37,7 +37,7 @@
 #define AIM_TYPE_UNDEFINED 0xF
 
 
-// ── Bit-width constants (used by driver for packing) ────────
+// --- Bit-width constants (used by driver for packing) ---
 
 #define AIM_ORG_ADDR_SIZE  3
 #define AIM_DEST_ADDR_SIZE 3
@@ -48,7 +48,7 @@
 #define AIM_TYPE_ADDR_MAX   ((1U << AIM_TYPE_ADDR_SIZE) - 1U)
 
 
-// ── Timed data layout constants (for downstream validation) ──
+// --- Timed data layout constants (for downstream validation) ---
 
 #define AIM_PKT_TIMED_ENDPOINT_BITS  5
 #define AIM_PKT_TIMED_MILLIS_BITS    27
@@ -66,7 +66,7 @@
 #define AIM_NETWORK_VERSION_STRING "0.4.2"
 
 
-// ── AIM Packet ───────────────────────────────────────────────
+// --- AIM Packet ---
 // Data field (timed format): upper 5 bits = endpoint ID, next 27 bits = timestamp (ms), lower 32 bits = payload
 // Data field (raw format): entire 64 bits are payload
 
@@ -137,8 +137,6 @@ private:
   uint8_t _origin;
   int32_t _timeOffset;
 
-  const uint8_t* _trackedOrigins;
-  uint8_t _trackedCount;
 };
 
 #endif // AIM_NETWORK_H
