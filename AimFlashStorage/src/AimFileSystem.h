@@ -123,14 +123,12 @@ class AimFileSystem {
   bool format();
   bool isReady() const { return _mounted; }
   lfs_t* getLfs() { return &_lfs; }
-  const struct lfs_config* getConfig() const { return &_lfs_cfg; }
 
   uint32_t getTotalSize() const {
     return _lfs_cfg.block_count * _lfs_cfg.block_size;
   }
-  
+
   uint32_t getUsedSize();
-  bool streamFile(const char* path, Print& out);
   bool removeFile(const char* path);
 
  private:

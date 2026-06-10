@@ -74,23 +74,6 @@ uint32_t AimFileSystem::getUsedSize() {
   return (uint32_t)size * _lfs_cfg.block_size;
 }
 
-bool AimFileSystem::streamFile(const char* path, Print& out) {
-  if (!_mounted) return false;
-  lfs_file_t file;
-  int err = lfs_file_open(&_lfs, &file, path, LFS_O_RDONLY);
-  if (err < 0) {
-    return false;
-  }
-  
-  char buf[64];
-  lfs_ssize_t read;
-  while ((read = lfs_file_read(&_lfs, &file, buf, sizeof(buf))) > 0) {
-    out.write(reinterpret_cast<const uint8_t*>(buf), read);
-  }
-  lfs_file_close(&_lfs, &file);
-  return true;
-}
-
 bool AimFileSystem::removeFile(const char* path) {
   if (!_mounted) return false;
   return lfs_remove(&_lfs, path) == 0;
