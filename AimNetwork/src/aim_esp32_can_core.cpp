@@ -6,7 +6,7 @@
 #include <logger.h>
 
 AimEsp32CanCore::AimEsp32CanCore(uint32_t baud, int rxPin, int txPin)
-    : _acceptDest(AIM_DEST_BROADCAST),
+    : _acceptDest(static_cast<uint8_t>(aim::Node::Broadcast)),
       _baud(baud),
       _rxPin(rxPin),
       _txPin(txPin),
@@ -190,7 +190,7 @@ bool AimEsp32CanCore::transmit(const Frame& frame) {
 
 bool AimEsp32CanCore::shouldAcceptId(const uint16_t id) const {
   const uint8_t dest = static_cast<uint8_t>((id >> 5) & 0x07U);
-  return (dest == _acceptDest) || (dest == AIM_DEST_BROADCAST);
+  return (dest == _acceptDest) || (dest == static_cast<uint8_t>(aim::Node::Broadcast));
 }
 
 bool AimEsp32CanCore::receive(Frame& frame) {

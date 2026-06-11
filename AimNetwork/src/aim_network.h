@@ -5,125 +5,134 @@
 #include <cstdint>
 #include <cstddef>
 
+namespace aim {
 
-// --- Module Addresses (3-bit, 0x0->0x7) ---
+// --- Packet field layout ---
 
-#define AIM_ORG_NOORG 0x0
-#define AIM_ORG_COMMS 0x1
-#define AIM_ORG_UPROP 0x2
-#define AIM_ORG_LPROP 0x3
-#define AIM_ORG_ALT   0x4
-#define AIM_ORG_GPS   0x5
-#define AIM_ORG_PWR   0x6
+static constexpr uint8_t kNodeBits = 3U;
+static constexpr uint8_t kTypeBits = 4U;
 
-#define AIM_DEST_COMMS     AIM_ORG_COMMS
-#define AIM_DEST_UPROP     AIM_ORG_UPROP
-#define AIM_DEST_LPROP     AIM_ORG_LPROP
-#define AIM_DEST_ALT       AIM_ORG_ALT
-#define AIM_DEST_BROADCAST 0x7
+static constexpr uint8_t kNodeMax =
+    static_cast<uint8_t>((1U << kNodeBits) - 1U);
+
+static constexpr uint8_t kTypeMax =
+    static_cast<uint8_t>((1U << kTypeBits) - 1U);
 
 
-// --- Packet Types (4-bit, 0x0->0xF) ---
+// --- Timed packet data layout ---
 
-#define AIM_TYPE_TIME      0x0
-#define AIM_TYPE_SENSOR    0x1
-#define AIM_TYPE_VALVE     0x2
-#define AIM_TYPE_GPS_LAT   0x3
-#define AIM_TYPE_GPS_LONG  0x4
-#define AIM_TYPE_ALT       0x5
-#define AIM_TYPE_LOWPW     0x6
-#define AIM_TYPE_HEARTBEAT 0x7
-#define AIM_TYPE_NODATA    0x8
-#define AIM_TYPE_UNDEFINED 0xF
+static constexpr uint8_t kEndpointBits = 5U;
+static constexpr uint8_t kMillisBits   = 27U;
+static constexpr uint8_t kPayloadBits  = 32U;
 
+static constexpr uint8_t kEndpointShift =
+    static_cast<uint8_t>(kMillisBits + kPayloadBits);
 
-// --- Bit-width constants (used by driver for packing) ---
+static constexpr uint8_t kEndpointMax =
+    static_cast<uint8_t>((1U << kEndpointBits) - 1U);
 
-#define AIM_ORG_ADDR_SIZE  3
-#define AIM_DEST_ADDR_SIZE 3
-#define AIM_TYPE_ADDR_SIZE  4
+static constexpr uint32_t kMillisMax =
+    static_cast<uint32_t>((1UL << kMillisBits) - 1UL);
 
-#define AIM_ORG_ADDR_MAX   ((1U << AIM_ORG_ADDR_SIZE) - 1U)
-#define AIM_DEST_ADDR_MAX  ((1U << AIM_DEST_ADDR_SIZE) - 1U)
-#define AIM_TYPE_ADDR_MAX   ((1U << AIM_TYPE_ADDR_SIZE) - 1U)
+static constexpr uint64_t kPayloadMask =
+    (1ULL << kPayloadBits) - 1ULL;
 
 
-// --- Timed data layout constants (for downstream validation) ---
+// --- Defaults ---
 
-#define AIM_PKT_TIMED_ENDPOINT_BITS  5
-#define AIM_PKT_TIMED_MILLIS_BITS    27
-#define AIM_PKT_TIMED_PAYLOAD_BITS   32
-#define AIM_PKT_RAW_PAYLOAD_BITS     64
+static constexpr uint32_t kHeartbeatTxIntervalDefaultMs = 5000U;
+static constexpr char kNetworkVersionString[] = "0.4.2";
 
-#define AIM_PKT_TIMED_ENDPOINT_SHIFT (AIM_PKT_TIMED_MILLIS_BITS + AIM_PKT_TIMED_PAYLOAD_BITS)
+using EndpointId = uint8_t;
 
-#define AIM_PKT_TIMED_ENDPOINT_MAX   ((1U << AIM_PKT_TIMED_ENDPOINT_BITS) - 1U)
-#define AIM_PKT_TIMED_MILLIS_MAX     ((1UL << AIM_PKT_TIMED_MILLIS_BITS) - 1UL)
-#define AIM_PKT_TIMED_PAYLOAD_MAX    ((1ULL << AIM_PKT_TIMED_PAYLOAD_BITS) - 1ULL)
 
-#define AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS 5000U
+enum class Node : uint8_t {
+  NoOrg     = 0x0,
+  Comms     = 0x1,
+  UProp     = 0x2,
+  LProp     = 0x3,
+  Alt       = 0x4,
+  Gps       = 0x5,
+  Power     = 0x6,
+  Broadcast = 0x7,
+};
 
-#define AIM_NETWORK_VERSION_STRING "0.4.2"
+enum class PacketType : uint8_t {
+  Time      = 0x0,
+  Sensor    = 0x1,
+  Valve     = 0x2,
+  GpsLat    = 0x3,
+  GpsLong   = 0x4,
+  Altitude  = 0x5,
+  LowPower  = 0x6,
+  Heartbeat = 0x7,
+  NoData    = 0x8,
+  Undefined = 0xF,
+};
 
 
 // --- AIM Packet ---
-// Data field (timed format): upper 5 bits = endpoint ID, next 27 bits = timestamp (ms), lower 32 bits = payload
-// Data field (raw format): entire 64 bits are payload
+// Timed data layout:
+// upper 5 bits  = endpoint ID
+// next 27 bits  = timestamp ms
+// lower 32 bits = payload
+struct Pkt {
+  Node origin = Node::NoOrg;
+  Node dest   = Node::NoOrg;
+  PacketType type = PacketType::NoData;
+  uint64_t data = 0U;
 
-typedef struct aimPkt {
-  uint8_t  padding : 5;
-  uint8_t  origin  : AIM_ORG_ADDR_SIZE;
-  uint8_t  dest    : AIM_DEST_ADDR_SIZE;
-  uint8_t  type    : AIM_TYPE_ADDR_SIZE;
-  uint64_t data;
-
-  bool packData(uint8_t endpointId, uint32_t ms, uint32_t payload) {
-    if (endpointId > AIM_PKT_TIMED_ENDPOINT_MAX) {
+  bool packData(EndpointId endpointId, uint32_t ms, uint32_t payload) {
+    if (endpointId > kEndpointMax) {
       return false;
     }
 
-    if (ms > AIM_PKT_TIMED_MILLIS_MAX) {
+    if (ms > kMillisMax) {
       return false;
     }
 
     data =
-      (((uint64_t)endpointId) << AIM_PKT_TIMED_ENDPOINT_SHIFT) |
-      (((uint64_t)ms) << AIM_PKT_TIMED_PAYLOAD_BITS) |
-      ((uint64_t)payload);
+        (static_cast<uint64_t>(endpointId) << kEndpointShift) |
+        (static_cast<uint64_t>(ms) << kPayloadBits) |
+        static_cast<uint64_t>(payload);
 
     return true;
   }
 
   bool validate() const {
-    return origin <= AIM_ORG_ADDR_MAX &&
-           dest   <= AIM_DEST_ADDR_MAX &&
-           type   <= AIM_TYPE_ADDR_MAX;
+    return static_cast<uint8_t>(origin) <= kNodeMax &&
+           static_cast<uint8_t>(dest)   <= kNodeMax &&
+           static_cast<uint8_t>(type)   <= kTypeMax;
   }
 
-  uint8_t getEndpointId() const {
-    return (uint8_t)((data >> AIM_PKT_TIMED_ENDPOINT_SHIFT) & AIM_PKT_TIMED_ENDPOINT_MAX);
+  EndpointId getEndpointId() const {
+    return static_cast<EndpointId>(
+        (data >> kEndpointShift) & kEndpointMax);
   }
 
   uint32_t getMillis() const {
-    return (uint32_t)((data >> AIM_PKT_TIMED_PAYLOAD_BITS) & AIM_PKT_TIMED_MILLIS_MAX);
+    return static_cast<uint32_t>(
+        (data >> kPayloadBits) & kMillisMax);
   }
 
   uint32_t getPayload() const {
-    return (uint32_t)(data & AIM_PKT_TIMED_PAYLOAD_MAX);
+    return static_cast<uint32_t>(data & kPayloadMask);
   }
+};
 
-} aimPkt;
+}  // namespace aim
+
 
 class AimCanDriver;
 
 class AimNetwork {
 public:
-  AimNetwork(AimCanDriver* hardware, uint8_t origin);
+  AimNetwork(AimCanDriver* hardware, aim::Node origin);
 
   void begin();
 
-  bool sendPkt(aimPkt& pkt);
-  bool readPkt(aimPkt& pkt);
+  bool sendPkt(aim::Pkt& pkt);
+  bool readPkt(aim::Pkt& pkt);
 
   // Time sync — call when receiving a TIME packet
   void syncTime(uint32_t remoteMillis);
@@ -134,9 +143,8 @@ public:
 private:
 
   AimCanDriver* _hw;
-  uint8_t _origin;
+  aim::Node _origin;
   int32_t _timeOffset;
-
 };
 
 #endif // AIM_NETWORK_H

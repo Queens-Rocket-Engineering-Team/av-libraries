@@ -19,23 +19,22 @@ class AimCanDriver {
 public:
 
 #if defined(ARDUINO_ARCH_STM32)
-  AimCanDriver(uint8_t origin, uint32_t baud, CAN_TypeDef* canbus);
+  AimCanDriver(uint32_t baud, CAN_TypeDef* canbus);
 
   void getStm32Stats(AimStm32CanCore::Stats& stats) const;
   void clearStm32Stats();
 #elif defined(ARDUINO_ARCH_ESP32)
-  AimCanDriver(uint8_t origin, uint32_t baud, int rxPin = -1, int txPin = -1);
+  AimCanDriver(uint32_t baud, int rxPin = -1, int txPin = -1);
 
   void getEsp32Stats(AimEsp32CanCore::Stats& stats) const;
   void clearEsp32Stats();
 #endif
 
-  void begin();
-  bool transmit(const aimPkt& pkt);
-  bool receive(aimPkt& pkt);
+  void begin(aim::Node acceptDest);
+  bool transmit(const aim::Pkt& pkt);
+  bool receive(aim::Pkt& pkt);
 
 private:
-  uint8_t  _origin;
   bool     _initialized;
 
 #if defined(ARDUINO_ARCH_STM32)
@@ -47,8 +46,8 @@ private:
   AimEsp32CanCore _canCore;
 #endif
 
-  static bool packAimPkt(const aimPkt& aim_pkt, CanCoreFrame& can_msg);
-  static bool unpackAimPkt(const CanCoreFrame& can_msg, aimPkt& aim_pkt);
+  static bool packAimPkt(const aim::Pkt& aim_pkt, CanCoreFrame& can_msg);
+  static bool unpackAimPkt(const CanCoreFrame& can_msg, aim::Pkt& aim_pkt);
 
   void logFailure(bool isBeginFailure, uint16_t canId = 0U) const;
 };

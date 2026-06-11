@@ -12,6 +12,7 @@ AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_
       _maxLogSize(maxLogSize),
       _rowsSinceRaw(0),
       _rdesInitialized(false),
+      _disabled(false),
       _logFileOpen(false),
       _syncCounter(0),
       _dumping(false),
@@ -29,6 +30,92 @@ AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_
 AimFlightRecorder::~AimFlightRecorder() {
   stopDump();
   closeLog();
+}
+
+bool AimFlightRecorder::begin() {
+  if (!_fs.isReady()) return false;
+
+  const uint32_t total = _fs.getTotalSize();
+  const uint32_t used  = _fs.getUsedSize();
+  const uint32_t freeBytes = (used >= total) ? 0U : (total - used);
+
+  if (freeBytes < kBootMinFreeBytes) {
+    const uint32_t prevFree = freeBytes;
+    lfs_t* lfs = _fs.getLfs();
+    lfs_remove(lfs, "/log.bak");
+    const uint32_t used2  = _fs.getUsedSize();
+    const uint32_t free2  = (used2 >= total) ? 0U : (total - used2);
+    if (free2 < kBootMinFreeBytes) {
+      lfs_remove(lfs, kLogPath);
+    }
+    LOG_WARN("Flight recorder: reclaimed space at boot (was %uB free)", prevFree);
+  }
+  return true;
+}
+
+bool AimFlightRecorder::_rotate() {
+  lfs_t* lfs = _fs.getLfs();
+  if (_logFileOpen) {
+    lfs_file_close(lfs, &_logFile);
+    _logFileOpen = false;
+  }
+  lfs_remove(lfs, "/log.bak");   // LFS_ERR_NOENT on first rotation is not an error
+  lfs_rename(lfs, kLogPath, "/log.bak");
+  const int err = lfs_file_open(lfs, &_logFile, kLogPath,
+                                LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND);
+  if (err != LFS_ERR_OK) {
+    return false;
+  }
+  _logFileOpen    = true;
+  _rdesInitialized = false;
+  _rowsSinceRaw   = 0;
+  _syncCounter    = 0;
+  return true;
+}
+
+size_t AimFlightRecorder::_encodeRow(uint8_t* buf, const uint32_t* rowData) {
+  size_t ptr = 0;
+  const bool refreshOrigin = (_originRefreshInt > 0) && (_rowsSinceRaw >= _originRefreshInt);
+
+  if (!_rdesInitialized || refreshOrigin) {
+    for (uint8_t col = 0; col < _numCols; col++) {
+      _lastVals[col] = rowData[col];
+      if (rowData[col] & 0x80000000U) {
+        encodeRaw32(&buf[ptr], rowData[col]);
+        ptr += 5;
+      } else {
+        encodeRaw31(&buf[ptr], rowData[col]);
+        ptr += 4;
+      }
+    }
+    _rowsSinceRaw    = 0;
+    _rdesInitialized = true;
+  } else {
+    for (uint8_t col = 0; col < _numCols; col++) {
+      const uint32_t lastVal = _lastVals[col];
+      const uint32_t curVal  = rowData[col];
+      const bool signAdd     = (curVal >= lastVal);
+      const uint32_t offset  = signAdd ? (curVal - lastVal) : (lastVal - curVal);
+
+      if (offset <= LVL_2_MAX) {
+        buf[ptr++] = 0x80U | (signAdd ? 0x20U : 0U) | (static_cast<uint8_t>(offset >> 8) & 0x1FU);
+        buf[ptr++] = static_cast<uint8_t>(offset);
+      } else if (offset <= LVL_3_MAX) {
+        buf[ptr++] = 0xC0U | (signAdd ? 0x10U : 0U) | (static_cast<uint8_t>(offset >> 16) & 0x0FU);
+        buf[ptr++] = static_cast<uint8_t>(offset >> 8);
+        buf[ptr++] = static_cast<uint8_t>(offset);
+      } else if (curVal <= 0x7FFFFFFFU) {
+        encodeRaw31(&buf[ptr], curVal);
+        ptr += 4;
+      } else {
+        encodeRaw32(&buf[ptr], curVal);
+        ptr += 5;
+      }
+      _lastVals[col] = curVal;
+    }
+    _rowsSinceRaw++;
+  }
+  return ptr;
 }
 
 bool AimFlightRecorder::closeLog() {
@@ -63,85 +150,56 @@ void AimFlightRecorder::encodeRaw32(uint8_t* buf, uint32_t in) {
 }
 
 bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
+  if (_disabled) return false;
   if (!_fs.isReady() || !rowData || _numCols == 0) return false;
 
   lfs_t* lfs = _fs.getLfs();
 
   if (!_logFileOpen) {
-    if (lfs_file_open(lfs, &_logFile, kLogPath, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND) != LFS_ERR_OK) return false;
+    if (lfs_file_open(lfs, &_logFile, kLogPath,
+                      LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND) != LFS_ERR_OK) {
+      return false;
+    }
     _logFileOpen = true;
   }
 
-  // Rotation
-  lfs_soff_t size = lfs_file_size(lfs, &_logFile);
-  if (size > 0 && (uint32_t)size > _maxLogSize) {
-    lfs_file_close(lfs, &_logFile);
-    lfs_remove(lfs, "/log.bak");
-    lfs_rename(lfs, kLogPath, "/log.bak");
-    if (lfs_file_open(lfs, &_logFile, kLogPath, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND) != LFS_ERR_OK) {
-      _logFileOpen = false;
+  // Size-triggered rotation.
+  const lfs_soff_t fileSize = lfs_file_size(lfs, &_logFile);
+  if (fileSize > 0 && static_cast<uint32_t>(fileSize) > _maxLogSize) {
+    if (!_rotate()) {
+      _disabled = true;
+      LOG_ERROR("Flight recorder disabled: rotation failed");
       return false;
     }
-    _rdesInitialized = false;
   }
 
-  uint8_t buffer[80]; // Max 5 bytes * 16 cols = 80 bytes
-  size_t ptr = 0;
-  bool refreshOrigin = (_originRefreshInt > 0) && (_rowsSinceRaw >= _originRefreshInt);
+  uint8_t buffer[80];  // 5 bytes × 16 cols max
+  size_t ptr = _encodeRow(buffer, rowData);
 
-  if (!_rdesInitialized || refreshOrigin) {
-    for (uint8_t col = 0; col < _numCols; col++) {
-      _lastVals[col] = rowData[col];
-      // Use Raw-32 if bit 31 is set, otherwise Raw-31
-      if (rowData[col] & 0x80000000) {
-        encodeRaw32(&buffer[ptr], rowData[col]);
-        ptr += 5;
-      } else {
-        encodeRaw31(&buffer[ptr], rowData[col]);
-        ptr += 4;
-      }
-    }
-    _rowsSinceRaw = 0;
-    _rdesInitialized = true;
-  } else {
-    for (uint8_t col = 0; col < _numCols; col++) {
-      uint32_t lastVal = _lastVals[col];
-      uint32_t curVal = rowData[col];
-      bool signAdd = (curVal >= lastVal);
-      uint32_t offset = signAdd ? (curVal - lastVal) : (lastVal - curVal);
-
-      if (offset <= LVL_2_MAX) {
-        // Prefix 10 (2 bits), Sign (1 bit), Offset High (5 bits) = 2 bytes total
-        buffer[ptr++] = 0x80 | (signAdd ? 0x20 : 0) | (static_cast<uint8_t>(offset >> 8) & 0x1F);
-        buffer[ptr++] = static_cast<uint8_t>(offset);
-      } else if (offset <= LVL_3_MAX) {
-        // Prefix 110 (3 bits), Sign (1 bit), Offset High (4 bits) = 3 bytes total
-        buffer[ptr++] = 0xC0 | (signAdd ? 0x10 : 0) | (static_cast<uint8_t>(offset >> 16) & 0x0F);
-        buffer[ptr++] = static_cast<uint8_t>(offset >> 8);
-        buffer[ptr++] = static_cast<uint8_t>(offset);
-      } else if (curVal <= 0x7FFFFFFF) {
-        // Prefix 0 (1 bit), Raw 31-bit (4 bytes total)
-        encodeRaw31(&buffer[ptr], curVal);
-        ptr += 4;
-      } else {
-        // Prefix 111 (3 bits), Raw 32-bit (5 bytes total)
-        encodeRaw32(&buffer[ptr], curVal);
-        ptr += 5;
-      }
-      _lastVals[col] = curVal;
-    }
-    _rowsSinceRaw++;
-  }
-
+  // Write with NOSPC recovery: one forced rotation + one retry.
+  // Worst-case cost: one rotation (bounded LFS metadata ops), << 2s watchdog.
   lfs_ssize_t written = lfs_file_write(lfs, &_logFile, buffer, ptr);
-  
-  // Periodic sync to reduce wear and improve performance
+  if (written != static_cast<lfs_ssize_t>(ptr)) {
+    if (_rotate()) {
+      ptr     = _encodeRow(buffer, rowData);
+      written = lfs_file_write(lfs, &_logFile, buffer, ptr);
+    }
+    if (written != static_cast<lfs_ssize_t>(ptr)) {
+      if (_logFileOpen) {
+        lfs_file_close(lfs, &_logFile);
+        _logFileOpen = false;
+      }
+      _disabled = true;
+      LOG_ERROR("Flight recorder disabled: storage full/unwritable");
+      return false;
+    }
+  }
+
   if (++_syncCounter >= 16) {
     lfs_file_sync(lfs, &_logFile);
     _syncCounter = 0;
   }
-
-  return written == (lfs_ssize_t)ptr;
+  return true;
 }
 
 bool AimFlightRecorder::startDump(Stream* stream) {

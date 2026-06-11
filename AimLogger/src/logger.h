@@ -20,8 +20,6 @@ public:
     explicit Logger(Stream& output, uint8_t node_id, LogLevel level = LogLevel::INFO)
   : output_(&output), node_id_(node_id), mask_(static_cast<uint8_t>(level)) {}
 
-  void setLevel(LogLevel level) { mask_ = static_cast<uint8_t>(level); }
-
     void setFilterMask(uint8_t mask) { mask_ = static_cast<uint8_t>(mask & 0x0FU); }
     uint8_t filterMask() const { return static_cast<uint8_t>(mask_ & 0x0FU); }
 

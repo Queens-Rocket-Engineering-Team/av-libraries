@@ -23,7 +23,22 @@ class AimFlightRecorder {
   ~AimFlightRecorder();
 
   /**
+   * @brief Reclaims flash space if free space is critically low at boot.
+   *
+   * Must be called once after AimFileSystem::begin() and before the first
+   * writeRow(). Deletes log.bak and/or log.bin as needed to ensure at least
+   * kBootMinFreeBytes are available. Safe to call on a fresh filesystem.
+   * @return true if storage is usable (even if no reclamation was needed).
+   */
+  bool begin();
+
+  /**
    * @brief Writes a compressed row of telemetry to the flash.
+   *
+   * On write failure, attempts one forced rotation to reclaim space and
+   * retries exactly once. If the retry also fails the recorder latches
+   * disabled and all subsequent calls return false immediately. Worst-case
+   * per-call cost: one LFS rotation (bounded metadata ops), << 2s watchdog.
    * @param rowData Array of unsigned 32-bit values to log.
    * @return true if written successfully.
    */
@@ -89,39 +104,49 @@ class AimFlightRecorder {
 
  private:
   AimFileSystem& _fs;
-  
-  uint8_t _numCols;
+
+  uint8_t  _numCols;
   uint16_t _originRefreshInt;
   uint32_t _maxLogSize;
   uint16_t _rowsSinceRaw;
   uint32_t _lastVals[MAX_COLUMNS];
-  bool _rdesInitialized;
+  bool     _rdesInitialized;
+  bool     _disabled;
 
   // Logging state
   lfs_file_t _logFile;
-  bool _logFileOpen;
-  uint8_t _syncCounter;
+  bool       _logFileOpen;
+  uint8_t    _syncCounter;
 
   // Dump state
-  bool _dumping;
-  Stream* _dumpStream;
-  lfs_file_t _dumpFile;
-  uint16_t _dumpBlockSize;
-  uint16_t _dumpNumBlocks;
-  uint32_t _dumpTotalBytes;
-  uint16_t _dumpCurrentBlock;
-  uint16_t _dumpCurrentBlockOffset;
-  lfs_soff_t _dumpLastPos;
-  uint8_t _savedLogMask;
+  bool        _dumping;
+  Stream*     _dumpStream;
+  lfs_file_t  _dumpFile;
+  uint16_t    _dumpBlockSize;
+  uint16_t    _dumpNumBlocks;
+  uint32_t    _dumpTotalBytes;
+  uint16_t    _dumpCurrentBlock;
+  uint16_t    _dumpCurrentBlockOffset;
+  lfs_soff_t  _dumpLastPos;
+  uint8_t     _savedLogMask;
 
   static const char* kLogPath;
+
+  // Minimum free bytes required before begin() considers storage healthy.
+  static constexpr uint32_t kBootMinFreeBytes = 64U * 1024U;
 
   // RDES implementation constants
   static constexpr uint16_t LVL_2_MAX = 8191U;       // 2^13 - 1
   static constexpr uint32_t LVL_3_MAX = 1048575UL;   // 2^20 - 1
 
-  void encodeRaw31(uint8_t* buf, uint32_t val);
-  void encodeRaw32(uint8_t* buf, uint32_t val);
+  void   encodeRaw31(uint8_t* buf, uint32_t val);
+  void   encodeRaw32(uint8_t* buf, uint32_t val);
+  // Closes log.bin, rotates it to log.bak, opens a fresh log.bin.
+  // Used by both size-triggered and failure-triggered rotation paths.
+  bool   _rotate();
+  // RDES-encodes rowData into buf. Returns byte count written.
+  // Updates _lastVals, _rdesInitialized, _rowsSinceRaw.
+  size_t _encodeRow(uint8_t* buf, const uint32_t* rowData);
 };
 
 #endif // AIM_FLIGHT_RECORDER_H
