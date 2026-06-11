@@ -5,9 +5,8 @@
 
 #if defined(ARDUINO_ARCH_STM32)
 
-AimCanDriver::AimCanDriver(uint8_t origin, uint32_t baud, CAN_TypeDef* canbus)
-    : _origin(origin),
-      _initialized(false),
+AimCanDriver::AimCanDriver(uint32_t baud, CAN_TypeDef* canbus)
+    : _initialized(false),
       _canCore(baud, canbus) {
 }
 
@@ -21,9 +20,8 @@ void AimCanDriver::clearStm32Stats() {
 
 #elif defined(ARDUINO_ARCH_ESP32)
 
-AimCanDriver::AimCanDriver(uint8_t origin, uint32_t baud, int rxPin, int txPin)
-    : _origin(origin),
-      _initialized(false),
+AimCanDriver::AimCanDriver(uint32_t baud, int rxPin, int txPin)
+    : _initialized(false),
       _canCore(baud, rxPin, txPin) {
 }
 
@@ -37,14 +35,14 @@ void AimCanDriver::clearEsp32Stats() {
 
 #endif
 
-bool AimCanDriver::packAimPkt(const aimPkt& aim_pkt, CanCoreFrame& can_msg) {
-  AIM_ASSERT((aim_pkt.origin & 0xF8U) == 0U);
-  AIM_ASSERT((aim_pkt.dest & 0xF8U) == 0U);
-  AIM_ASSERT((aim_pkt.type & 0xF0U) == 0U);
+bool AimCanDriver::packAimPkt(const aim::Pkt& aim_pkt, CanCoreFrame& can_msg) {
+  AIM_ASSERT(static_cast<uint8_t>(aim_pkt.origin) <= aim::kNodeMax);
+  AIM_ASSERT(static_cast<uint8_t>(aim_pkt.dest)   <= aim::kNodeMax);
+  AIM_ASSERT(static_cast<uint8_t>(aim_pkt.type)   <= aim::kTypeMax);
 
-  can_msg.id = (((aim_pkt.origin & 0x07U) << 8) |
-                ((aim_pkt.dest   & 0x07U) << 5) |
-                ((aim_pkt.type   & 0x0FU))) & 0x07FFU;
+  can_msg.id = (((static_cast<uint16_t>(aim_pkt.origin) & 0x07U) << 8) |
+                ((static_cast<uint16_t>(aim_pkt.dest)   & 0x07U) << 5) |
+                ((static_cast<uint16_t>(aim_pkt.type)   & 0x0FU))) & 0x07FFU;
   can_msg.dlc = static_cast<uint8_t>(sizeof(aim_pkt.data));
   if (can_msg.dlc != 8U) {
     return false;
@@ -54,13 +52,13 @@ bool AimCanDriver::packAimPkt(const aimPkt& aim_pkt, CanCoreFrame& can_msg) {
   return true;
 }
 
-bool AimCanDriver::unpackAimPkt(const CanCoreFrame& can_msg, aimPkt& aim_pkt) {
+bool AimCanDriver::unpackAimPkt(const CanCoreFrame& can_msg, aim::Pkt& aim_pkt) {
   AIM_ASSERT((can_msg.id & 0xF800U) == 0U);
   AIM_ASSERT(can_msg.dlc <= 8U);
 
-  aim_pkt.origin = static_cast<uint8_t>((can_msg.id >> 8) & 0x07U);
-  aim_pkt.dest = static_cast<uint8_t>((can_msg.id >> 5) & 0x07U);
-  aim_pkt.type = static_cast<uint8_t>(can_msg.id & 0x0FU);
+  aim_pkt.origin = static_cast<aim::Node>((can_msg.id >> 8) & 0x07U);
+  aim_pkt.dest = static_cast<aim::Node>((can_msg.id >> 5) & 0x07U);
+  aim_pkt.type = static_cast<aim::PacketType>(can_msg.id & 0x0FU);
 
   if (sizeof(aim_pkt.data) != can_msg.dlc) {
     return false;
@@ -81,9 +79,8 @@ void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
   AimStm32CanCore::Stats stats = {};
   _canCore.getStats(stats);
   LOG_ERROR(
-      "AimCanDriver fail op=%s org=%u id=0x%03X beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
+      "AimCanDriver fail op=%s id=0x%03X beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
       op,
-      static_cast<unsigned>(_origin),
       static_cast<unsigned>(canId),
       0UL,
       static_cast<unsigned long>(stats.txHalErrors),
@@ -98,9 +95,8 @@ void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
   AimEsp32CanCore::Stats stats = {};
   _canCore.getStats(stats);
   LOG_ERROR(
-      "AimCanDriver fail op=%s org=%u id=0x%03X beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
+      "AimCanDriver fail op=%s id=0x%03X beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
       op,
-      static_cast<unsigned>(_origin),
       static_cast<unsigned>(canId),
       static_cast<unsigned long>(stats.beginErrors),
       static_cast<unsigned long>(stats.txErrors),
@@ -116,15 +112,13 @@ void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
 #endif // FLIGHT_BUILD
 }
 
-void AimCanDriver::begin() {
+void AimCanDriver::begin(aim::Node acceptDest) {
   if (_initialized) {
     return;
   }
 
-  AIM_ASSERT((_origin & 0xF8U) == 0U);
-
-  if (!_canCore.setAcceptDest(_origin)) {
-    LOG_ERROR("AimCanDriver begin failed: invalid destination origin=%u", static_cast<unsigned>(_origin));
+  if (!_canCore.setAcceptDest(static_cast<uint8_t>(acceptDest))) {
+    LOG_ERROR("AimCanDriver begin failed: invalid destination id=%u", static_cast<unsigned>(acceptDest));
     _initialized = false;
     return;
   }
@@ -135,7 +129,7 @@ void AimCanDriver::begin() {
   }
 }
 
-bool AimCanDriver::transmit(const aimPkt& pkt) {
+bool AimCanDriver::transmit(const aim::Pkt& pkt) {
   if (!_initialized) {
     LOG_ERROR("AimCanDriver transmit failed: driver not initialized");
     return false;
@@ -155,7 +149,7 @@ bool AimCanDriver::transmit(const aimPkt& pkt) {
   return sent;
 }
 
-bool AimCanDriver::receive(aimPkt& pkt) {
+bool AimCanDriver::receive(aim::Pkt& pkt) {
   if (!_initialized) {
     LOG_ERROR("AimCanDriver receive failed: driver not initialized");
     return false;

@@ -4,18 +4,18 @@
 #include "aim_can_driver.h"
 #include <logger.h>
 
-AimNetwork::AimNetwork(AimCanDriver* hardware, uint8_t origin)
+AimNetwork::AimNetwork(AimCanDriver* hardware, aim::Node origin)
     : _hw(hardware),
       _origin(origin),
       _timeOffset(0) {}
 
 void AimNetwork::begin() {
   if (_hw != nullptr) {
-    _hw->begin();
+    _hw->begin(_origin);
   }
 }
 
-bool AimNetwork::sendPkt(aimPkt& pkt) {
+bool AimNetwork::sendPkt(aim::Pkt& pkt) {
   if (_hw == nullptr) {
     LOG_ERROR("AimNetwork sendPkt failed: hardware driver is null");
     return false;
@@ -36,7 +36,7 @@ bool AimNetwork::sendPkt(aimPkt& pkt) {
   return sent;
 }
 
-bool AimNetwork::readPkt(aimPkt& pkt) {
+bool AimNetwork::readPkt(aim::Pkt& pkt) {
   if (_hw == nullptr) {
     LOG_ERROR("AimNetwork readPkt failed: hardware driver is null");
     return false;
