@@ -6,16 +6,13 @@
 #include "aim_network.h"
 #include "aim_safety.h"
 
+#include "aim_can_frame.h"
 #include <driver/twai.h>
 #include <cstdint>
 
 class AimEsp32CanCore {
 public:
-  struct Frame {
-    uint16_t id;
-    uint8_t dlc;
-    uint8_t data[8];
-  };
+  using Frame = aim::Frame;
 
   struct Stats {
     uint32_t txFrames;

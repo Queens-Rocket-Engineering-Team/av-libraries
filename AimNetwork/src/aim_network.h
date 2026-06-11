@@ -61,6 +61,7 @@ enum class PacketType : uint8_t {
   Time      = 0x0,
   Sensor    = 0x1,
   Valve     = 0x2,
+  // Reserved for planned GPS / altimeter / power nodes (unimplemented)
   GpsLat    = 0x3,
   GpsLong   = 0x4,
   Altitude  = 0x5,
@@ -69,6 +70,35 @@ enum class PacketType : uint8_t {
   NoData    = 0x8,
   Undefined = 0xF,
 };
+
+
+// --- CAN ID layout: origin(3) | dest(3) | type(4) ---
+
+static constexpr uint8_t kIdOriginShift = 8U;
+static constexpr uint8_t kIdDestShift   = 5U;
+static constexpr uint8_t kIdTypeShift   = 0U;
+
+static constexpr uint16_t kIdOriginMask = 0x7U << kIdOriginShift;
+static constexpr uint16_t kIdDestMask   = 0x7U << kIdDestShift;
+static constexpr uint16_t kIdTypeMask   = 0xFU << kIdTypeShift;
+
+static inline uint16_t idFromPkt(Node origin, Node dest, PacketType type) {
+  return (static_cast<uint16_t>(origin) << kIdOriginShift) |
+         (static_cast<uint16_t>(dest)   << kIdDestShift) |
+         (static_cast<uint16_t>(type)   << kIdTypeShift);
+}
+
+static inline Node originFromId(uint16_t id) {
+  return static_cast<Node>((id & kIdOriginMask) >> kIdOriginShift);
+}
+
+static inline Node destFromId(uint16_t id) {
+  return static_cast<Node>((id & kIdDestMask) >> kIdDestShift);
+}
+
+static inline PacketType typeFromId(uint16_t id) {
+  return static_cast<PacketType>((id & kIdTypeMask) >> kIdTypeShift);
+}
 
 
 // --- AIM Packet ---
@@ -99,6 +129,12 @@ struct Pkt {
     return true;
   }
 
+  bool packFloat(EndpointId ep, uint32_t ms, float v) {
+    uint32_t payload;
+    memcpy(&payload, &v, sizeof(float));
+    return packData(ep, ms, payload);
+  }
+
   bool validate() const {
     return static_cast<uint8_t>(origin) <= kNodeMax &&
            static_cast<uint8_t>(dest)   <= kNodeMax &&
@@ -117,6 +153,13 @@ struct Pkt {
 
   uint32_t getPayload() const {
     return static_cast<uint32_t>(data & kPayloadMask);
+  }
+
+  float payloadAsFloat() const {
+    float v;
+    uint32_t payload = getPayload();
+    memcpy(&v, &payload, sizeof(float));
+    return v;
   }
 };
 

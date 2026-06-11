@@ -32,14 +32,6 @@ class AimConfigStore {
   explicit AimConfigStore(AimFileSystem& fs);
 
   /**
-   * @brief Loads a JSON configuration file into a JsonDocument.
-   * @param path The path to the config file (e.g., "/config.json").
-   * @param doc The JsonDocument to populate.
-   * @return true if loaded and parsed successfully.
-   */
-  bool load(const char* path, JsonDocument& doc);
-
-  /**
    * @brief Loads a JSON config file, distinguishing missing-file from
    *        read and parse failures. See AimConfigLoad.
    */

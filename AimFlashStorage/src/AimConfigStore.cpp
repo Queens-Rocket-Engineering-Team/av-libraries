@@ -3,10 +3,6 @@
 
 AimConfigStore::AimConfigStore(AimFileSystem& fs) : _fs(fs) {}
 
-bool AimConfigStore::load(const char* path, JsonDocument& doc) {
-  return loadDetailed(path, doc) == AimConfigLoad::OK;
-}
-
 AimConfigLoad AimConfigStore::loadDetailed(const char* path, JsonDocument& doc) {
   if (!_fs.isReady()) {
     return AimConfigLoad::STORAGE_NOT_READY;

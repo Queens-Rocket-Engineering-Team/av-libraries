@@ -9,8 +9,8 @@ void aimSetSafetyHook(AimSafetyHook hook) {
   g_safetyHook = hook;
 }
 
-void aimGetLastSafetyFault(volatile const char*& file, int& line, uint32_t& code) {
-  file = g_lastFaultFile;
+void aimGetLastSafetyFault(const char*& file, int& line, uint32_t& code) {
+  file = (const char*)g_lastFaultFile;
   line = g_lastFaultLine;
   code = g_lastFaultCode;
 }

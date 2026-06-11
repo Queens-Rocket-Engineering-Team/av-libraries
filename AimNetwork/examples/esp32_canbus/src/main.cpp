@@ -13,12 +13,12 @@ struct NodeSchedulerState {
   uint32_t lastHeartbeatTxMs = 0U;
 };
 
-static AimCanDriver g_canHw(NODE_ORIGIN, NODE_CAN_BAUD, NODE_CAN_RX_PIN, NODE_CAN_TX_PIN);
-static AimNetwork g_aim(&g_canHw, NODE_ORIGIN);
-
 static NodeSchedulerState g_schedulerState = {};
 static bool g_watchdogReady = false;
-static Logger g_log(Serial, NODE_ORIGIN, LogLevel::INFO);
+static Logger g_log(Serial, static_cast<uint8_t>(NODE_ORIGIN), LogLevel::INFO);
+
+static AimCanDriver g_canHw(NODE_CAN_BAUD, NODE_CAN_RX_PIN, NODE_CAN_TX_PIN);
+static AimNetwork g_aim(&g_canHw, NODE_ORIGIN);
 
 void initWatchdog(void) {
 #if ESP_IDF_VERSION_MAJOR >= 5
@@ -60,13 +60,13 @@ void kickWatchdog(void) {
 void serviceCanRx(uint32_t networkNowMs) {
   // Handle incoming bus messages and custom packet branches here.
   for (uint8_t i = 0U; i < kMaxRxFramesPerLoop; i++) {
-    aimPkt pkt = {};
+    aim::Pkt pkt = {};
     if (!g_aim.readPkt(pkt)) {
       break;
     }
 
-    if (pkt.type == AIM_TYP_TIME) {
-      g_aim.syncTime(static_cast<uint32_t>(pkt.getPayload64()));
+    if (pkt.type == aim::PacketType::Time) {
+      g_aim.syncTime(pkt.getMillis());
       LOG_DEBUG("Time sync received: networkNowMs=%u", networkNowMs);
     }
 
@@ -79,10 +79,16 @@ void serviceTx(uint32_t schedulerNowMs, uint32_t networkNowMs) {
   // Add periodic transmit-side behavior in this service pattern.
 
   // TX SECTION 1: node heartbeat.
-  if ((schedulerNowMs - g_schedulerState.lastHeartbeatTxMs) >= AIM_HEARTBEAT_TX_INTERVAL_DEFAULT_MS) {
+  if ((schedulerNowMs - g_schedulerState.lastHeartbeatTxMs) >= aim::kHeartbeatTxIntervalDefaultMs) {
     g_schedulerState.lastHeartbeatTxMs = schedulerNowMs;
     const uint32_t payload = static_cast<uint32_t>(g_schedulerState.value);
-    if (!g_aim.sendTimedPkt(networkNowMs, payload, AIM_DEST_BROADCAST, AIM_TYP_HEARTBEAT)) {
+    
+    aim::Pkt pkt = {};
+    pkt.dest = aim::Node::Broadcast;
+    pkt.type = aim::PacketType::Heartbeat;
+    pkt.packData(0U, networkNowMs, payload);
+
+    if (!g_aim.sendPkt(pkt)) {
       LOG_ERROR("Heartbeat TX failed");
     } else {
       LOG_DEBUG("Heartbeat TX ok");
@@ -189,7 +195,7 @@ void runStateMachine(uint32_t schedulerNowMs, uint32_t networkNowMs) {
 }
 
 void setup(void) {
-  AIM_ASSERT(NODE_ORIGIN <= AIM_ORG_ADDR_MAX);
+  AIM_ASSERT(static_cast<uint8_t>(NODE_ORIGIN) <= aim::kNodeMax);
   Serial.begin(NODE_SERIAL_BAUD);
   g_logger = &g_log;
   LOG_INFO("Boot node origin=%u", static_cast<unsigned>(NODE_ORIGIN));

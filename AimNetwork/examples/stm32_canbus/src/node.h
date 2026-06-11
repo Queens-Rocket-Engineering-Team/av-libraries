@@ -9,7 +9,7 @@
 #include <aim_safety.h>
 
 // Node-level identity and interface configuration lives in this file.
-#define NODE_ORIGIN AIM_ORG_ALT
+#define NODE_ORIGIN aim::Node::Alt
 #define NODE_NAME "STM32_CANBUS"
 
 #define NODE_CAN_BAUD 500000U
@@ -51,7 +51,7 @@ enum NodeState : uint8_t {
 
 // Add node-specific periodic behavior in nodeUpdate().
 // Keep packet handling here only when it is specific to this node.
-bool nodeHandleCanPacket(const aimPkt& pkt, uint32_t networkNowMs, AimNetwork& aim);
+bool nodeHandleCanPacket(const aim::Pkt& pkt, uint32_t networkNowMs, AimNetwork& aim);
 void nodeUpdate(uint32_t schedulerNowMs);
 
 #endif  // NODE_H
