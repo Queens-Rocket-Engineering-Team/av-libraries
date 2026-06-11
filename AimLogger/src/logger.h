@@ -18,13 +18,13 @@ class Logger final
 {
 public:
     explicit Logger(Stream& output, uint8_t node_id, LogLevel level = LogLevel::INFO)
-  : output_(&output), node_id_(node_id), mask_(static_cast<uint8_t>(level)) {}
+  : _output(&output), _nodeId(node_id), _mask(static_cast<uint8_t>(level)) {}
 
-    void setFilterMask(uint8_t mask) { mask_ = static_cast<uint8_t>(mask & 0x0FU); }
-    uint8_t filterMask() const { return static_cast<uint8_t>(mask_ & 0x0FU); }
+    void setFilterMask(uint8_t mask) { _mask = static_cast<uint8_t>(mask & 0x0FU); }
+    uint8_t filterMask() const { return static_cast<uint8_t>(_mask & 0x0FU); }
 
-    void setOutput(Stream& output) { output_ = &output; }
-    void setNodeId(uint8_t node_id) { node_id_ = node_id; }
+    void setOutput(Stream& output) { _output = &output; }
+    void setNodeId(uint8_t node_id) { _nodeId = node_id; }
 
     void log(LogLevel level, const char* fmt, ...);
 
@@ -34,9 +34,9 @@ private:
     static const char* levelToString(LogLevel level);
     bool shouldLog(LogLevel level) const;
 
-    Stream*   output_;
-    uint8_t   node_id_;
-    uint8_t mask_;
+    Stream*   _output;
+    uint8_t   _nodeId;
+    uint8_t   _mask;
 };
 
 extern Logger* g_logger;
