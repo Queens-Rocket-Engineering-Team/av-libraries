@@ -36,13 +36,9 @@ void AimCanDriver::clearEsp32Stats() {
 #endif
 
 bool AimCanDriver::packAimPkt(const aim::Pkt& aim_pkt, CanCoreFrame& can_msg) {
-  AIM_ASSERT(static_cast<uint8_t>(aim_pkt.origin) <= aim::kNodeMax);
-  AIM_ASSERT(static_cast<uint8_t>(aim_pkt.dest)   <= aim::kNodeMax);
-  AIM_ASSERT(static_cast<uint8_t>(aim_pkt.type)   <= aim::kTypeMax);
+  AIM_ASSERT(aim_pkt.validate());
 
-  can_msg.id = (((static_cast<uint16_t>(aim_pkt.origin) & 0x07U) << 8) |
-                ((static_cast<uint16_t>(aim_pkt.dest)   & 0x07U) << 5) |
-                ((static_cast<uint16_t>(aim_pkt.type)   & 0x0FU))) & 0x07FFU;
+  can_msg.id = aim::idFromPkt(aim_pkt.origin, aim_pkt.dest, aim_pkt.type);
   can_msg.dlc = static_cast<uint8_t>(sizeof(aim_pkt.data));
   if (can_msg.dlc != 8U) {
     return false;
@@ -56,9 +52,9 @@ bool AimCanDriver::unpackAimPkt(const CanCoreFrame& can_msg, aim::Pkt& aim_pkt) 
   AIM_ASSERT((can_msg.id & 0xF800U) == 0U);
   AIM_ASSERT(can_msg.dlc <= 8U);
 
-  aim_pkt.origin = static_cast<aim::Node>((can_msg.id >> 8) & 0x07U);
-  aim_pkt.dest = static_cast<aim::Node>((can_msg.id >> 5) & 0x07U);
-  aim_pkt.type = static_cast<aim::PacketType>(can_msg.id & 0x0FU);
+  aim_pkt.origin = aim::originFromId(can_msg.id);
+  aim_pkt.dest = aim::destFromId(can_msg.id);
+  aim_pkt.type = aim::typeFromId(can_msg.id);
 
   if (sizeof(aim_pkt.data) != can_msg.dlc) {
     return false;

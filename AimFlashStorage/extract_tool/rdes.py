@@ -82,8 +82,3 @@ class RDESDecompressor():
 
     def getCompressedSize(self):
         return self.__lastCompressedSize
-
-    def getUncompressedSize(self):
-        # values = rows * cols * 4 bytes
-        # This is an estimate based on decompressed list
-        return 0 

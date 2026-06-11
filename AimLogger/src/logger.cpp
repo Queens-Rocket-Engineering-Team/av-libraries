@@ -22,7 +22,7 @@ bool Logger::shouldLog(LogLevel level) const
 
 void Logger::log(LogLevel level, const char* fmt, ...)
 {
-    if ((output_ == nullptr) || !shouldLog(level) || (fmt == nullptr))
+    if ((_output == nullptr) || !shouldLog(level) || (fmt == nullptr))
     {
         return;
     }
@@ -34,7 +34,7 @@ void Logger::log(LogLevel level, const char* fmt, ...)
         line,
         sizeof(line),
         "N%u:%08lu:%s ",
-        static_cast<unsigned>(node_id_),
+        static_cast<unsigned>(_nodeId),
         ts,
         levelToString(level)
     );
@@ -47,5 +47,5 @@ void Logger::log(LogLevel level, const char* fmt, ...)
         va_end(args);
     }
 
-    output_->println(line);
+    _output->println(line);
 }

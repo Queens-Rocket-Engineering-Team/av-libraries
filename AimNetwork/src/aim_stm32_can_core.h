@@ -36,6 +36,7 @@
 #endif
 #include <cstddef>
 #include <cstdint>
+#include "aim_can_frame.h"
 
 #if defined(CAN1)
 #define AIM_STM32_DEFAULT_CANBUS CAN1
@@ -45,11 +46,7 @@
 
 class AimStm32CanCore {
 public:
-  struct Frame {
-    uint16_t id;
-    uint8_t dlc;
-    uint8_t data[8];
-  };
+  using Frame = aim::Frame;
 
   struct Stats {
     uint32_t txFrames;

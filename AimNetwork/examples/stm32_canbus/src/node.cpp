@@ -1,6 +1,6 @@
 #include "node.h"
 
-bool nodeHandleCanPacket(const aimPkt& pkt, uint32_t networkNowMs, AimNetwork& aim) {
+bool nodeHandleCanPacket(const aim::Pkt& pkt, uint32_t networkNowMs, AimNetwork& aim) {
   (void)pkt;
   (void)networkNowMs;
   (void)aim;

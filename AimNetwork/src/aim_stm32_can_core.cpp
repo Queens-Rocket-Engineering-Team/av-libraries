@@ -144,7 +144,7 @@ bool configureF1CanPins(CAN_TypeDef* canbus) {
 }
 
 AimStm32CanCore::AimStm32CanCore(uint32_t baud, CAN_TypeDef* canbus)
-  : _acceptDest(AIM_DEST_BROADCAST),
+  : _acceptDest(static_cast<uint8_t>(aim::Node::Broadcast)),
       _baud(baud),
       _canbus(canbus),
       _initialized(false),
@@ -273,7 +273,7 @@ bool AimStm32CanCore::configureFilter() {
 #endif
 
   const uint16_t originId = static_cast<uint16_t>((_acceptDest & 0x07U) << kDestFieldFilterShift);
-  const uint16_t broadcastId = static_cast<uint16_t>((AIM_DEST_BROADCAST & 0x07U) << kDestFieldFilterShift);
+  const uint16_t broadcastId = static_cast<uint16_t>((static_cast<uint8_t>(aim::Node::Broadcast) & 0x07U) << kDestFieldFilterShift);
   const uint16_t mask = kDestFilterMask;
 
   filter.FilterIdHigh = originId;

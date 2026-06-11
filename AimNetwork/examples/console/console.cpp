@@ -125,10 +125,10 @@ static void printStatus(uint8_t currentState, uint32_t networkNowMs) {
   s_serial->print(static_cast<unsigned>(s_log->filterMask()), HEX);
   s_serial->print(" nowMs=");
   s_serial->print(static_cast<unsigned long>(networkNowMs));
-  s_serial->print(" offset=");
-  s_serial->println(static_cast<long>(s_aim->getTimeOffset()));
+  s_serial->print(" synced=");
+  s_serial->println(static_cast<unsigned long>(s_aim->syncedMillis()));
   s_serial->print("version=");
-  s_serial->print(AIM_NETWORK_VERSION_STRING);
+  s_serial->print(aim::kNetworkVersionString);
   s_serial->print(" build=");
   s_serial->print(__DATE__);
   s_serial->print(" ");
