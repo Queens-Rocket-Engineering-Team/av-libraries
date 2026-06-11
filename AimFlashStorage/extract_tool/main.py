@@ -40,14 +40,11 @@ def enter_console_root(device):
     """Returns the console to the root DBG menu from any state.
 
     'q' exits the console if it was active (ignored otherwise); console
-    entry then requires a DOUBLE Ctrl-A within the firmware's 750 ms
-    guard window — a single press only arms the guard.
+    entry then uses 'd', the single debug-console entry key.
     """
     device.write(b'q')
     time.sleep(0.1)
-    device.write(b'\x01')
-    time.sleep(0.1)
-    device.write(b'\x01')
+    device.write(b'd')
     if wait_for_prompt(device, "DBG [") is None:
         raise IOError("Console entry failed: no 'DBG [' prompt")
 

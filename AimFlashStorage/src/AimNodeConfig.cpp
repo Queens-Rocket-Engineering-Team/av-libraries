@@ -24,13 +24,19 @@ AimConfigLoad AimNodeConfig::load(AimNodeCfg& out) {
     if (status != AimConfigLoad::OK) {
         return status;
     }
+
+    bool loadedIdentity = false;
+
     if (doc["boardName"].is<const char*>()) {
         strlcpy(out.boardName, doc["boardName"], sizeof(out.boardName));
+        loadedIdentity = true;
     }
     if (doc["canId"].is<uint8_t>()) {
         out.canId = doc["canId"];
+        loadedIdentity = true;
     }
-    return AimConfigLoad::OK;
+
+    return loadedIdentity ? AimConfigLoad::OK : AimConfigLoad::NOT_PRESENT;
 }
 
 bool AimNodeConfig::save(const AimNodeCfg& cfg) {
