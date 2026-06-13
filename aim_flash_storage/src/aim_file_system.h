@@ -59,55 +59,106 @@ class ESP32PartitionDriver : public AimBlockDevice {
 };
 #endif
 
-#include <SerialFlash.h>
-class SerialFlashDriver : public AimBlockDevice {
+#include <SPI.h>
+class SpiNorFlashDriver : public AimBlockDevice {
  public:
-  SerialFlashDriver(uint8_t csPin) : _csPin(csPin), _capacity(0) {}
+  static constexpr uint32_t kSectorSize = 4096U;
+  static constexpr uint32_t kPageSize   = 256U;
+  static constexpr uint32_t kWaitMs     = 500U;
+
+  SpiNorFlashDriver(uint8_t csPin, SPIClass& spi)
+    : _cs(csPin), _spi(spi), _sectors(0) {}
+
   bool begin() override {
-    if (!SerialFlash.begin(_csPin)) return false;
-    uint8_t id[5]; SerialFlash.readID(id); _capacity = SerialFlash.capacity(id);
-    return _capacity > 0;
+    pinMode(_cs, OUTPUT);
+    digitalWrite(_cs, HIGH);
+    _spi.begin();
+
+    uint8_t id[3];
+    _select(); _spi.transfer(0x9F);
+    id[0] = _spi.transfer(0); id[1] = _spi.transfer(0); id[2] = _spi.transfer(0);
+    _deselect();
+
+    if (id[0] == 0xFF || id[0] == 0x00) { LOG_ERROR("SpiNorFlash: no device"); return false; }
+    if (id[2] < 16 || id[2] > 28) { LOG_ERROR("SpiNorFlash: bad capacity byte 0x%02X", id[2]); return false; }
+    _sectors = (1UL << id[2]) / kSectorSize;
+    LOG_INFO("SpiNorFlash: mfr=0x%02X %luMB %lu sectors",
+             id[0], (1UL << id[2]) >> 20, (unsigned long)_sectors);
+    return true;
   }
-  int read(const struct lfs_config* c, lfs_block_t block, lfs_off_t off, void* buffer, lfs_size_t size) override {
-    SerialFlash.read(block * c->block_size + off, buffer, size); return 0;
-  }
-  int prog(const struct lfs_config* c, lfs_block_t block, lfs_off_t off, const void* buffer, lfs_size_t size) override {
-    SerialFlash.write(block * c->block_size + off, buffer, size);
-    uint32_t start = millis();
-    while (!SerialFlash.ready()) {
-      if (millis() - start > 500) { LOG_ERROR("Flash prog timeout"); return LFS_ERR_IO; }
-      yield();
-    }
-    return 0;
-  }
-  int erase(const struct lfs_config* c, lfs_block_t block) override {
-    SerialFlash.eraseBlock(block * c->block_size);
-    uint32_t start = millis();
-    while (!SerialFlash.ready()) {
-      if (millis() - start > 1000) { LOG_ERROR("Flash erase timeout"); return LFS_ERR_IO; }
-      yield();
-    }
-    return 0;
-  }
-  int sync(const struct lfs_config* c) override {
+
+  int read(const struct lfs_config* c, lfs_block_t block,
+           lfs_off_t off, void* buf, lfs_size_t size) override {
     (void)c;
-    uint32_t start = millis();
-    while (!SerialFlash.ready()) {
-      if (millis() - start > 500) { LOG_ERROR("Flash sync timeout"); return LFS_ERR_IO; }
-      yield();
+    uint32_t addr = block * kSectorSize + off;
+    _select(); _spi.transfer(0x03); _addr(addr);
+    uint8_t* p = static_cast<uint8_t*>(buf);
+    for (lfs_size_t i = 0; i < size; ++i) p[i] = _spi.transfer(0);
+    _deselect(); return 0;
+  }
+
+  int prog(const struct lfs_config* c, lfs_block_t block,
+           lfs_off_t off, const void* buf, lfs_size_t size) override {
+    (void)c;
+    const uint8_t* p = static_cast<const uint8_t*>(buf);
+    uint32_t addr = block * kSectorSize + off;
+    lfs_size_t rem = size;
+    while (rem > 0) {
+      lfs_size_t chunk = kPageSize - (addr % kPageSize);
+      if (chunk > rem) chunk = rem;
+      _write_enable();
+      _select(); _spi.transfer(0x02); _addr(addr);
+      for (lfs_size_t i = 0; i < chunk; ++i) _spi.transfer(*p++);
+      _deselect();
+      if (!_wait()) return LFS_ERR_IO;
+      addr += chunk; rem -= chunk;
     }
     return 0;
   }
-  lfs_size_t read_size() const override { return 1; }
-  lfs_size_t prog_size() const override { return 1; }
-  lfs_size_t block_size() const override { return SerialFlash.blockSize(); }
-  lfs_size_t block_count() const override { return _capacity / block_size(); }
-  int32_t block_cycles() const override { return 500; }
-  lfs_size_t cache_size() const override { return 256; }
+
+  int erase(const struct lfs_config* c, lfs_block_t block) override {
+    (void)c;
+    _write_enable();
+    _select(); _spi.transfer(0x20); _addr(block * kSectorSize); _deselect();
+    return _wait() ? 0 : LFS_ERR_IO;
+  }
+
+  int sync(const struct lfs_config* c) override { (void)c; return _wait() ? 0 : LFS_ERR_IO; }
+
+  lfs_size_t read_size()      const override { return 1; }
+  lfs_size_t prog_size()      const override { return 1; }
+  lfs_size_t block_size()     const override { return kSectorSize; }
+  lfs_size_t block_count()    const override { return _sectors; }
+  int32_t    block_cycles()   const override { return 100000; }
+  lfs_size_t cache_size()     const override { return kPageSize; }
   lfs_size_t lookahead_size() const override { return 32; }
+
  private:
-  uint8_t _csPin;
-  uint32_t _capacity;
+  uint8_t   _cs;
+  SPIClass& _spi;
+  uint32_t  _sectors;
+
+  void _select()   { digitalWrite(_cs, LOW); }
+  void _deselect() { digitalWrite(_cs, HIGH); }
+
+  void _addr(uint32_t a) {
+    _spi.transfer((a >> 16) & 0xFF);
+    _spi.transfer((a >>  8) & 0xFF);
+    _spi.transfer( a        & 0xFF);
+  }
+
+  void _write_enable() { _select(); _spi.transfer(0x06); _deselect(); }
+
+  bool _wait() {
+    uint32_t start = millis();
+    do {
+      _select(); _spi.transfer(0x05);
+      uint8_t s = _spi.transfer(0);
+      _deselect();
+      if (!(s & 0x01)) return true;
+    } while ((uint32_t)(millis() - start) < kWaitMs);
+    LOG_ERROR("SpiNorFlash: busy timeout"); return false;
+  }
 };
 
 /**
@@ -132,6 +183,9 @@ class AimFileSystem {
   bool removeFile(const char* path);
 
  private:
+  // Copies block-device geometry into _lfs_cfg; shared by begin() and format().
+  void fillGeometry();
+
   static int lfs_read(const struct lfs_config* c, lfs_block_t block, lfs_off_t off, void* buffer, lfs_size_t size);
   static int lfs_prog(const struct lfs_config* c, lfs_block_t block, lfs_off_t off, const void* buffer, lfs_size_t size);
   static int lfs_erase(const struct lfs_config* c, lfs_block_t block);

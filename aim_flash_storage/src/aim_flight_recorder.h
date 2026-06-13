@@ -2,7 +2,7 @@
 #define AIM_FLIGHT_RECORDER_H
 
 #include <Arduino.h>
-#include "AimFileSystem.h"
+#include "aim_file_system.h"
 
 /**
  * @brief High-speed telemetry recorder using RDES compression.
@@ -15,11 +15,17 @@ class AimFlightRecorder {
   static constexpr uint8_t MAX_COLUMNS = 16;
 
   // Dump wire protocol — shared contract with extract_tool/main.py.
-  static constexpr char kDumpStartChar = '#';   // device: handshake start byte
-  static constexpr char kDumpCmdNext   = 'N';   // host: ack block / request next
-  static constexpr char kDumpCmdResend = 'L';   // host: resend last block
+  static constexpr char    kDumpStartChar   = '#';  // device: handshake start byte
+  static constexpr char    kDumpCmdNext     = 'N';  // host: ack block / request next
+  static constexpr char    kDumpCmdResend   = 'L';  // host: resend last block
+  static constexpr uint8_t kHandshakeName   = 32U;  // boardName field width in handshake
+  static constexpr uint8_t kHandshakeHeader = 32U;  // per-header field width in handshake
+  static constexpr uint16_t kDumpBlockSize  = 512U; // dump block/chunk size on the wire
 
-  AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt, uint32_t maxLogSize);
+  // headers: pointer to static string array (not copied). Must remain valid
+  // for the lifetime of the recorder.
+  AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
+                    uint32_t maxLogSize, const char* const* headers = nullptr);
   ~AimFlightRecorder();
 
   /**
@@ -70,13 +76,16 @@ class AimFlightRecorder {
   /**
    * @brief Opens the log file for reading and starts a streaming dump.
    *
+   * Sends a self-describing handshake: '#' + blockSize(2) + numBlocks(2) +
+   * totalBytes(4) + boardName[32] + numCols(1) + headers[numCols][32].
    * Mutes the global logger for the duration of the dump — an async LOG_*
-   * line interleaved with the binary block stream corrupts it (no
-   * checksums). stopDump() restores the previous log mask.
-   * @param stream The serial stream to dump hex data to.
+   * line interleaved with the binary block stream corrupts it (no checksums).
+   * stopDump() restores the previous log mask.
+   * @param stream    The serial stream to dump to.
+   * @param boardName Board identity string (null-padded to 32 bytes on wire).
    * @return true if started successfully.
    */
-  bool startDump(Stream* stream);
+  bool startDump(Stream* stream, const char* boardName);
 
   /**
    * @brief Services a chunk of the active dump. Must be called periodically.
@@ -103,7 +112,8 @@ class AimFlightRecorder {
   }
 
  private:
-  AimFileSystem& _fs;
+  AimFileSystem&     _fs;
+  const char* const* _headers;   // points to static strings; not owned
 
   uint8_t  _numCols;
   uint16_t _originRefreshInt;
@@ -122,7 +132,6 @@ class AimFlightRecorder {
   bool        _dumping;
   Stream*     _dumpStream;
   lfs_file_t  _dumpFile;
-  uint16_t    _dumpBlockSize;
   uint16_t    _dumpNumBlocks;
   uint32_t    _dumpTotalBytes;
   uint16_t    _dumpCurrentBlock;

@@ -1,12 +1,14 @@
-#include "AimFlightRecorder.h"
+#include "aim_flight_recorder.h"
 #include <logger.h>
 #include <string.h>
 #include <algorithm>
 
 const char* AimFlightRecorder::kLogPath = "/log.bin";
 
-AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt, uint32_t maxLogSize)
+AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
+                                     uint32_t maxLogSize, const char* const* headers)
     : _fs(fs),
+      _headers(headers),
       _numCols(numCols > MAX_COLUMNS ? MAX_COLUMNS : numCols),
       _originRefreshInt(originRefreshInt),
       _maxLogSize(maxLogSize),
@@ -17,7 +19,6 @@ AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_
       _syncCounter(0),
       _dumping(false),
       _dumpStream(nullptr),
-      _dumpBlockSize(512),
       _dumpNumBlocks(0),
       _dumpTotalBytes(0),
       _dumpCurrentBlock(0),
@@ -202,35 +203,52 @@ bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
   return true;
 }
 
-bool AimFlightRecorder::startDump(Stream* stream) {
+bool AimFlightRecorder::startDump(Stream* stream, const char* boardName) {
   if (!_fs.isReady() || _dumping || !stream) return false;
   if (_logFileOpen) syncLog();
 
   lfs_t* lfs = _fs.getLfs();
   if (lfs_file_open(lfs, &_dumpFile, kLogPath, LFS_O_RDONLY) != LFS_ERR_OK) return false;
-  
-  _dumpTotalBytes = static_cast<uint32_t>(lfs_file_size(lfs, &_dumpFile));
-  _dumpBlockSize = 512;
-  _dumpNumBlocks = static_cast<uint16_t>((_dumpTotalBytes + _dumpBlockSize - 1) / _dumpBlockSize);
-  _dumpCurrentBlock = 0;
-  _dumpCurrentBlockOffset = 0;
-  _dumpLastPos = 0;
-  _dumpStream = stream;
-  _dumping = true;
 
-  // Mute async logging before the handshake byte — a LOG_* line interleaved
-  // with the binary block stream corrupts it. Restored in stopDump().
+  _dumpTotalBytes          = static_cast<uint32_t>(lfs_file_size(lfs, &_dumpFile));
+  _dumpNumBlocks           = static_cast<uint16_t>((_dumpTotalBytes + kDumpBlockSize - 1) / kDumpBlockSize);
+  _dumpCurrentBlock        = 0;
+  _dumpCurrentBlockOffset  = 0;
+  _dumpLastPos             = 0;
+  _dumpStream              = stream;
+  _dumping                 = true;
+
+  // Mute async logging before the handshake — a LOG_* line interleaved with
+  // the binary block stream corrupts it. Restored in stopDump().
   if (g_logger != nullptr) {
     _savedLogMask = g_logger->filterMask();
     g_logger->setFilterMask(0U);
   }
 
-  // MDE Handshake: 1 byte start '#' + 2 byte blockSize + 2 byte numBlocks + 4 byte totalBytes
+  // Self-describing handshake:
+  //   '#' + blockSize(2LE) + numBlocks(2LE) + totalBytes(4LE)
+  //   + boardName[32] + numCols(1) + headers[numCols][32]
+  char nameBuf[kHandshakeName];
+  memset(nameBuf, 0, sizeof(nameBuf));
+  if (boardName) { strncpy(nameBuf, boardName, sizeof(nameBuf) - 1U); }
+
+  const uint16_t blockSize = kDumpBlockSize;  // addressable copy for the LE wire write
   _dumpStream->write(kDumpStartChar);
-  _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpBlockSize), 2);
-  _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpNumBlocks), 2);
+  _dumpStream->write(reinterpret_cast<const uint8_t*>(&blockSize),       2);
+  _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpNumBlocks),  2);
   _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpTotalBytes), 4);
-  
+  _dumpStream->write(reinterpret_cast<const uint8_t*>(nameBuf), kHandshakeName);
+  _dumpStream->write(_numCols);
+
+  char hdrBuf[kHandshakeHeader];
+  for (uint8_t i = 0U; i < _numCols; ++i) {
+    memset(hdrBuf, 0, sizeof(hdrBuf));
+    if (_headers && _headers[i]) {
+      strncpy(hdrBuf, _headers[i], sizeof(hdrBuf) - 1U);
+    }
+    _dumpStream->write(reinterpret_cast<const uint8_t*>(hdrBuf), kHandshakeHeader);
+  }
+
   return true;
 }
 
@@ -268,10 +286,10 @@ bool AimFlightRecorder::serviceDump(size_t maxBytes) {
   size_t totalSent = 0;
   lfs_t* lfs = _fs.getLfs();
 
-  while (totalSent < maxBytes && _dumpCurrentBlockOffset < _dumpBlockSize) {
+  while (totalSent < maxBytes && _dumpCurrentBlockOffset < kDumpBlockSize) {
     uint8_t buf[32]; // Small chunk
     size_t toRead = std::min(sizeof(buf), maxBytes - totalSent);
-    toRead = std::min(toRead, (size_t)(_dumpBlockSize - _dumpCurrentBlockOffset));
+    toRead = std::min(toRead, (size_t)(kDumpBlockSize - _dumpCurrentBlockOffset));
     
     lfs_ssize_t read = lfs_file_read(lfs, &_dumpFile, buf, toRead);
     if (read < 0) break;

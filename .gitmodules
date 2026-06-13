@@ -1,4 +1,4 @@
-[submodule "AimFlashStorage/src/littlefs"]
-	path = AimFlashStorage/src/littlefs
+[submodule "aim_flash_storage/src/littlefs"]
+	path = aim_flash_storage/src/littlefs
 	url = git@github.com:tristanalderson/littlefs.git
 	branch = v2.11

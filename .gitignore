@@ -1,6 +1,9 @@
 *.pio
 *.tmp
 
+# extract_tool output (timestamped telemetry dumps)
+aim_flash_storage/extract_tool/*.csv
+
 #vscode config
 *.vscode__pycache__/
 *.pyc

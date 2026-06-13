@@ -1,4 +1,4 @@
-#include "AimFileSystem.h"
+#include "aim_file_system.h"
 #include <logger.h>
 #include <string.h>
 
@@ -27,14 +27,7 @@ bool AimFileSystem::begin() {
     return false;
   }
 
-  // Fill geometry from device
-  _lfs_cfg.read_size = _device->read_size();
-  _lfs_cfg.prog_size = _device->prog_size();
-  _lfs_cfg.block_size = _device->block_size();
-  _lfs_cfg.block_count = _device->block_count();
-  _lfs_cfg.block_cycles = _device->block_cycles();
-  _lfs_cfg.cache_size = _device->cache_size();
-  _lfs_cfg.lookahead_size = _device->lookahead_size();
+  fillGeometry();
 
   // Validate geometry before calling into littlefs to avoid assertions
   if (_lfs_cfg.read_size == 0 || _lfs_cfg.block_count == 0) {
@@ -58,6 +51,16 @@ bool AimFileSystem::begin() {
   LOG_INFO("Flash mounted: %u blocks of %u bytes", _lfs_cfg.block_count, _lfs_cfg.block_size);
 
   return true;
+}
+
+void AimFileSystem::fillGeometry() {
+  _lfs_cfg.read_size = _device->read_size();
+  _lfs_cfg.prog_size = _device->prog_size();
+  _lfs_cfg.block_size = _device->block_size();
+  _lfs_cfg.block_count = _device->block_count();
+  _lfs_cfg.block_cycles = _device->block_cycles();
+  _lfs_cfg.cache_size = _device->cache_size();
+  _lfs_cfg.lookahead_size = _device->lookahead_size();
 }
 
 void AimFileSystem::end() {
@@ -88,13 +91,7 @@ bool AimFileSystem::format() {
       LOG_ERROR("Flash format aborted: device begin failed");
       return false;
     }
-    _lfs_cfg.read_size = _device->read_size();
-    _lfs_cfg.prog_size = _device->prog_size();
-    _lfs_cfg.block_size = _device->block_size();
-    _lfs_cfg.block_count = _device->block_count();
-    _lfs_cfg.block_cycles = _device->block_cycles();
-    _lfs_cfg.cache_size = _device->cache_size();
-    _lfs_cfg.lookahead_size = _device->lookahead_size();
+    fillGeometry();
   }
 
   if (_lfs_cfg.read_size == 0 || _lfs_cfg.block_count == 0) {
