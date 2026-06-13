@@ -1,5 +1,5 @@
 {
-  "name": "AimLogger",
+  "name": "aim_logger",
   "version": "0.2.0",
   "description": "Lightweight Arduino logging library for QRET modules",
   "keywords": "logger, logging, serial, avionics",
