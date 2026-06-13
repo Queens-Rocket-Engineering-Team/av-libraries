@@ -6,9 +6,9 @@ These libraries support our STM32 nodes and the ESP32 comms board. They handle t
 
 ## What's Inside
 
-- **AimNetwork**: Manages CAN bus communication, time synchronization, and network health monitoring seamlessly in the background.
-- **AimLogger**: A lightweight logger that automatically adds timestamps and severity levels (like `DEBUG` or `ERROR`) to your messages.
-- **AimFlashStorage**: Stores data directly to the board's serial flash memory or internal flash using littlefs. Includes RDES compression for telemetry.
+- **aim_network**: Manages CAN bus communication, time synchronization, and network health monitoring seamlessly in the background.
+- **aim_logger**: A lightweight logger that automatically adds timestamps and severity levels (like `DEBUG` or `ERROR`) to your messages.
+- **aim_flash_storage**: Stores data directly to the board's serial flash memory or internal flash using littlefs. Includes RDES compression for telemetry.
 
 ## Setup & Build
 
@@ -27,7 +27,7 @@ Whether you use the VSCode UI or the terminal, the core operations are the same.
 
 ## Quick Start
 
-1. Open an example folder (e.g., `AimNetwork/examples/stm32_canbus`) as a project in PlatformIO.
+1. Open an example folder (e.g., `aim_network/examples/stm32_canbus`) as a project in PlatformIO.
 2. Use standard Arduino functions in the main loop to handle your hardware:
    ```cpp
    int pressureValue = analogRead(A0); 
@@ -43,6 +43,6 @@ Whether you use the VSCode UI or the terminal, the core operations are the same.
 
 ## Design Notes
 
-- The CAN network design is intentionally narrow and predictable: mailbox-driven TX, destination filtering, bounded RX polling, and fixed-size static queues.
+- The CAN network design is intentionally narrow and predictable: mailbox-driven TX, content-based addressing (consumers filter by message class/subject — there is no destination field), bounded RX polling, and fixed-size static queues.
 - STM32 uses an internal HAL-based CAN backend instead of external libraries for precise hardware control.
 - ESP32 uses TWAI through the existing backend.
