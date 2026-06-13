@@ -26,7 +26,9 @@ public:
 
   AimEsp32CanCore(uint32_t baud, int rxPin, int txPin);
 
-  bool setAcceptDest(uint8_t dest);
+  // mask: OR of aim::classBit() values to accept. Hardware accepts broadly
+  // (TWAI has one code/mask pair); unwanted classes are filtered in software.
+  bool setClassMask(uint16_t mask);
 
   bool begin();
   bool transmit(const Frame& frame);
@@ -38,9 +40,9 @@ public:
 private:
   bool validatePins() const;
   bool configureTiming(twai_timing_config_t& config) const;
-  bool shouldAcceptId(uint16_t id) const;
+  bool shouldAcceptId(uint32_t id) const;
 
-  uint8_t _acceptDest;
+  uint16_t _classMask;
   uint32_t _baud;
   int _rxPin;
   int _txPin;

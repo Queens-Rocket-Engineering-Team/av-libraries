@@ -7,9 +7,10 @@ namespace aim {
 
 /**
  * @brief Raw CAN frame format used by all AimNetwork drivers.
+ * All AIM frames use 29-bit extended IDs; cores hard-code IDE.
  */
 struct Frame {
-  uint16_t id;
+  uint32_t id;
   uint8_t dlc;
   uint8_t data[8];
 };

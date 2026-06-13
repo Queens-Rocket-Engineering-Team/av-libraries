@@ -6,11 +6,12 @@
 #include <logger.h>
 
 namespace {
-static constexpr uint16_t kStdIdMask = 0x07FFU;
-// In 16-bit filter mode, StdId is left-shifted by 5 before compare.
-// AIM destination bits [7:5] therefore map to filter bits [12:10].
-static constexpr uint16_t kDestFieldFilterShift = 10U;
-static constexpr uint16_t kDestFilterMask = static_cast<uint16_t>(0x07U << kDestFieldFilterShift);
+// bxCAN 32-bit filter registers hold ExtId << 3 | IDE | RTR.
+static constexpr uint8_t  kFilterExtIdShift = 3U;
+static constexpr uint32_t kFilterIdeBit     = 0x4U;
+static constexpr uint32_t kFilterRtrBit     = 0x2U;
+// CAN1 owns banks 0..13; CAN2 owns 14..27 (SlaveStartFilterBank).
+static constexpr uint8_t  kFilterBanksPerInstance = 14U;
 
 struct TimingCandidate {
   uint8_t bs1;
@@ -144,7 +145,7 @@ bool configureF1CanPins(CAN_TypeDef* canbus) {
 }
 
 AimStm32CanCore::AimStm32CanCore(uint32_t baud, CAN_TypeDef* canbus)
-  : _acceptDest(static_cast<uint8_t>(aim::Node::Broadcast)),
+  : _classMask(0U),
       _baud(baud),
       _canbus(canbus),
       _initialized(false),
@@ -160,16 +161,25 @@ AimStm32CanCore::AimStm32CanCore(uint32_t baud, CAN_TypeDef* canbus)
   static_assert(sizeof(Frame::data) == 8U, "CAN frame data must be 8 bytes");
 }
 
-bool AimStm32CanCore::setAcceptDest(uint8_t dest) {
+bool AimStm32CanCore::setClassMask(uint16_t mask) {
   if (_initialized) {
     return false;
   }
 
-  if ((dest & 0xF8U) != 0U) {
+  if (mask == 0U) {
     return false;
   }
 
-  _acceptDest = dest;
+  // One hardware filter bank per accepted class.
+  uint8_t banksNeeded = 0U;
+  for (uint16_t bits = mask; bits != 0U; bits = static_cast<uint16_t>(bits & (bits - 1U))) {
+    banksNeeded = static_cast<uint8_t>(banksNeeded + 1U);
+  }
+  if (banksNeeded > kFilterBanksPerInstance) {
+    return false;
+  }
+
+  _classMask = mask;
   return true;
 }
 
@@ -259,34 +269,53 @@ bool AimStm32CanCore::configureTiming() {
 }
 
 bool AimStm32CanCore::configureFilter() {
-  CAN_FilterTypeDef filter = {};
-  filter.FilterBank = 0U;
-  filter.FilterMode = CAN_FILTERMODE_IDMASK;
-  filter.FilterScale = CAN_FILTERSCALE_16BIT;
-  filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-  filter.FilterActivation = ENABLE;
+  // One 32-bit IDMASK bank per accepted class: match the class field
+  // (ID bits 26:23) and require an extended data frame. Reserved bits,
+  // subject, and source are passed through (receivers ignore reserved).
+  uint8_t bank = 0U;
 #if defined(CAN2)
-  filter.SlaveStartFilterBank = 14U;
   if (_canbus == CAN2) {
-    filter.FilterBank = 14U;
+    bank = kFilterBanksPerInstance;
   }
 #endif
 
-  const uint16_t originId = static_cast<uint16_t>((_acceptDest & 0x07U) << kDestFieldFilterShift);
-  const uint16_t broadcastId = static_cast<uint16_t>((static_cast<uint8_t>(aim::Node::Broadcast) & 0x07U) << kDestFieldFilterShift);
-  const uint16_t mask = kDestFilterMask;
+  for (uint8_t cls = 0U; cls < 16U; cls++) {
+    if ((_classMask & (1U << cls)) == 0U) {
+      continue;
+    }
 
-  filter.FilterIdHigh = originId;
-  filter.FilterMaskIdHigh = mask;
-  filter.FilterIdLow = broadcastId;
-  filter.FilterMaskIdLow = mask;
+    const uint32_t id32 =
+        (static_cast<uint32_t>(cls) << aim::kIdClassShift) << kFilterExtIdShift | kFilterIdeBit;
+    const uint32_t mask32 =
+        (static_cast<uint32_t>(0xFU) << aim::kIdClassShift) << kFilterExtIdShift |
+        kFilterIdeBit | kFilterRtrBit;
 
-  const HAL_StatusTypeDef status = HAL_CAN_ConfigFilter(&_hcan, &filter);
-  return (status == HAL_OK);
+    CAN_FilterTypeDef filter = {};
+    filter.FilterBank = bank;
+    filter.FilterMode = CAN_FILTERMODE_IDMASK;
+    filter.FilterScale = CAN_FILTERSCALE_32BIT;
+    filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
+    filter.FilterActivation = ENABLE;
+#if defined(CAN2)
+    filter.SlaveStartFilterBank = kFilterBanksPerInstance;
+#endif
+    filter.FilterIdHigh = static_cast<uint16_t>(id32 >> 16U);
+    filter.FilterIdLow = static_cast<uint16_t>(id32 & 0xFFFFU);
+    filter.FilterMaskIdHigh = static_cast<uint16_t>(mask32 >> 16U);
+    filter.FilterMaskIdLow = static_cast<uint16_t>(mask32 & 0xFFFFU);
+
+    if (HAL_CAN_ConfigFilter(&_hcan, &filter) != HAL_OK) {
+      return false;
+    }
+
+    bank = static_cast<uint8_t>(bank + 1U);
+  }
+
+  return true;
 }
 
 bool AimStm32CanCore::begin() {
-  AIM_ASSERT((_acceptDest & 0xF8U) == 0U);
+  AIM_ASSERT(_classMask != 0U);
   AIM_ASSERT(_canbus != nullptr);
 
   if (_initialized) {
@@ -486,9 +515,9 @@ bool AimStm32CanCore::flushTxMailboxes() {
     }
 
     CAN_TxHeaderTypeDef header = {};
-    header.StdId = frame.id & kStdIdMask;
-    header.ExtId = 0U;
-    header.IDE = CAN_ID_STD;
+    header.StdId = 0U;
+    header.ExtId = frame.id & aim::kExtIdMask;
+    header.IDE = CAN_ID_EXT;
     header.RTR = CAN_RTR_DATA;
     header.DLC = frame.dlc;
     header.TransmitGlobalTime = DISABLE;
@@ -544,9 +573,9 @@ bool AimStm32CanCore::pollRx() {
       return false;
     }
 
-    if ((header.IDE == CAN_ID_STD) && (header.RTR == CAN_RTR_DATA) && (header.DLC <= 8U)) {
+    if ((header.IDE == CAN_ID_EXT) && (header.RTR == CAN_RTR_DATA) && (header.DLC <= 8U)) {
       Frame frame = {};
-      frame.id = static_cast<uint16_t>(header.StdId & kStdIdMask);
+      frame.id = header.ExtId & aim::kExtIdMask;
       frame.dlc = static_cast<uint8_t>(header.DLC);
       (void)memcpy(frame.data, data, frame.dlc);
       (void)pushRx(frame);

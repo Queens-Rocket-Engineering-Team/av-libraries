@@ -30,9 +30,10 @@ public:
   void clearEsp32Stats();
 #endif
 
-  void begin(aim::Node acceptDest);
-  bool transmit(const aim::Pkt& pkt);
-  bool receive(aim::Pkt& pkt);
+  // classAcceptMask: OR of aim::classBit() values this node receives.
+  bool begin(uint16_t classAcceptMask);
+  bool transmit(const aim::Msg& msg);
+  bool receive(aim::Msg& msg);
 
 private:
   bool     _initialized;
@@ -46,10 +47,10 @@ private:
   AimEsp32CanCore _canCore;
 #endif
 
-  static bool packAimPkt(const aim::Pkt& aim_pkt, CanCoreFrame& can_msg);
-  static bool unpackAimPkt(const CanCoreFrame& can_msg, aim::Pkt& aim_pkt);
+  static bool packMsg(const aim::Msg& msg, CanCoreFrame& can_msg);
+  static bool unpackMsg(const CanCoreFrame& can_msg, aim::Msg& msg);
 
-  void logFailure(bool isBeginFailure, uint16_t canId = 0U) const;
+  void logFailure(bool isBeginFailure, uint32_t canId = 0U) const;
 };
 
 #endif // AIM_CAN_DRIVER_H

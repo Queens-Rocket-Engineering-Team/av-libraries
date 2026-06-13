@@ -1,4 +1,4 @@
-# AIM Network Protocol — v1.0 DRAFT (for review)
+# AIM Network Protocol — v0.6.0 DRAFT (for review)
 
 CAN 2.0B, 29-bit extended ID, 500 kbps. All multi-byte fields **little-endian**
 (decided: both MCUs are LE, no interop requirement with anyone else; zero byte-swapping).

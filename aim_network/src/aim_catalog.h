@@ -80,6 +80,7 @@ static inline uint8_t priorityFor(Class cls, uint8_t subj) {
     case Class::State:
       return 1U;
     case Class::Sensor:
+      // TODO: what data rate do we need from PTs
       return (subj >= subject::PtRunTank && subj <= subject::Pt4) ? 2U : 3U;
     default:
       return 3U;

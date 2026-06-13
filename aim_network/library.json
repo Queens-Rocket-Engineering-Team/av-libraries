@@ -1,6 +1,6 @@
 {
-  "name": "AimNetwork",
-  "version": "0.4.2",
+  "name": "aim_network",
+  "version": "0.6.0",
   "description": "Avionics Interconnected Module Network Library",
   "keywords": "can, avionics, network",
   "repository": {
@@ -21,7 +21,7 @@
   "dependencies": [
     {
       "owner": "Queens-Rocket-Engineering-Team",
-      "name": "AimLogger",
+      "name": "aim_logger",
       "version": "*"
     }
   ]

@@ -64,7 +64,9 @@ public:
   AimStm32CanCore(uint32_t baud,
                   CAN_TypeDef* canbus = AIM_STM32_DEFAULT_CANBUS);
 
-  bool setAcceptDest(uint8_t dest);
+  // mask: OR of aim::classBit() values to accept. One hardware filter bank
+  // is configured per accepted class (bxCAN 32-bit IDMASK mode).
+  bool setClassMask(uint16_t mask);
 
   bool begin();
   bool transmit(const Frame& frame);
@@ -95,7 +97,7 @@ private:
   static uint32_t enterCritical();
   static void exitCritical(uint32_t primask);
 
-  uint8_t _acceptDest;
+  uint16_t _classMask;
   uint32_t _baud;
   CAN_TypeDef* _canbus;
   bool _initialized;

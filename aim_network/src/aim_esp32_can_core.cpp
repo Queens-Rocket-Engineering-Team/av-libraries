@@ -6,7 +6,7 @@
 #include <logger.h>
 
 AimEsp32CanCore::AimEsp32CanCore(uint32_t baud, int rxPin, int txPin)
-    : _acceptDest(static_cast<uint8_t>(aim::Node::Broadcast)),
+    : _classMask(0U),
       _baud(baud),
       _rxPin(rxPin),
       _txPin(txPin),
@@ -15,16 +15,16 @@ AimEsp32CanCore::AimEsp32CanCore(uint32_t baud, int rxPin, int txPin)
       _stats{} {
 }
 
-bool AimEsp32CanCore::setAcceptDest(uint8_t dest) {
+bool AimEsp32CanCore::setClassMask(uint16_t mask) {
   if (_initialized) {
     return false;
   }
 
-  if ((dest & 0xF8U) != 0U) {
+  if (mask == 0U) {
     return false;
   }
 
-  _acceptDest = dest;
+  _classMask = mask;
   return true;
 }
 
@@ -50,7 +50,7 @@ bool AimEsp32CanCore::configureTiming(twai_timing_config_t& config) const {
 }
 
 bool AimEsp32CanCore::begin() {
-  AIM_ASSERT((_acceptDest & 0xF8U) == 0U);
+  AIM_ASSERT(_classMask != 0U);
 
   _initialized = false;
 
@@ -166,8 +166,8 @@ bool AimEsp32CanCore::transmit(const Frame& frame) {
   }
 
   twai_message_t msg = {};
-  msg.identifier = frame.id & 0x07FFU;
-  msg.extd = 0;
+  msg.identifier = frame.id & aim::kExtIdMask;
+  msg.extd = 1;
   msg.rtr = 0;
   msg.data_length_code = frame.dlc;
   (void)memcpy(msg.data, frame.data, frame.dlc);
@@ -177,8 +177,8 @@ bool AimEsp32CanCore::transmit(const Frame& frame) {
     _stats.txErrors = _stats.txErrors + 1U;
     _stats.lastError = static_cast<uint32_t>(status);
     LOG_ERROR(
-        "AimEsp32CanCore transmit failed: id=0x%03X status=%d",
-        static_cast<unsigned>(msg.identifier),
+        "AimEsp32CanCore transmit failed: id=0x%08lX status=%d",
+        static_cast<unsigned long>(msg.identifier),
         static_cast<int>(status));
     return false;
   }
@@ -188,13 +188,16 @@ bool AimEsp32CanCore::transmit(const Frame& frame) {
   return true;
 }
 
-bool AimEsp32CanCore::shouldAcceptId(const uint16_t id) const {
-  const aim::Node dest = aim::destFromId(id);
-  return (static_cast<uint8_t>(dest) == _acceptDest) || (dest == aim::Node::Broadcast);
+bool AimEsp32CanCore::shouldAcceptId(const uint32_t id) const {
+  // Reserved bits (10:0) ignored per protocol invariant; source==0 is the
+  // wiring-fault canary and is dropped.
+  const uint8_t cls = static_cast<uint8_t>((id >> aim::kIdClassShift) & 0xFU);
+  const uint8_t src = static_cast<uint8_t>((id >> aim::kIdSourceShift) & 0xFU);
+  return (src != 0U) && ((_classMask & (1U << cls)) != 0U);
 }
 
 bool AimEsp32CanCore::receive(Frame& frame) {
-  AIM_ASSERT((_acceptDest & 0xF8U) == 0U);
+  AIM_ASSERT(_classMask != 0U);
 
   if (!_initialized) {
     _stats.rxErrors = _stats.rxErrors + 1U;
@@ -217,7 +220,7 @@ bool AimEsp32CanCore::receive(Frame& frame) {
     return false;
   }
 
-  if ((msg.extd != 0U) || (msg.rtr != 0U)) {
+  if ((msg.extd == 0U) || (msg.rtr != 0U)) {
     _stats.filteredFrames = _stats.filteredFrames + 1U;
     return false;
   }
@@ -226,13 +229,13 @@ bool AimEsp32CanCore::receive(Frame& frame) {
     _stats.rxErrors = _stats.rxErrors + 1U;
     _stats.lastError = static_cast<uint32_t>(ESP_ERR_INVALID_SIZE);
     LOG_ERROR(
-        "AimEsp32CanCore receive failed: invalid dlc=%u id=0x%03X",
+        "AimEsp32CanCore receive failed: invalid dlc=%u id=0x%08lX",
         static_cast<unsigned>(msg.data_length_code),
-        static_cast<unsigned>(msg.identifier & 0x07FFU));
+        static_cast<unsigned long>(msg.identifier & aim::kExtIdMask));
     return false;
   }
 
-  const uint16_t id = static_cast<uint16_t>(msg.identifier & 0x07FFU);
+  const uint32_t id = msg.identifier & aim::kExtIdMask;
   if (!shouldAcceptId(id)) {
     _stats.filteredFrames = _stats.filteredFrames + 1U;
     return false;

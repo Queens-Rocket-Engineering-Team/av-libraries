@@ -35,36 +35,37 @@ void AimCanDriver::clearEsp32Stats() {
 
 #endif
 
-bool AimCanDriver::packAimPkt(const aim::Pkt& aim_pkt, CanCoreFrame& can_msg) {
-  AIM_ASSERT(aim_pkt.validate());
+bool AimCanDriver::packMsg(const aim::Msg& msg, CanCoreFrame& can_msg) {
+  AIM_ASSERT(static_cast<uint8_t>(msg.source) != 0U);
 
-  can_msg.id = aim::idFromPkt(aim_pkt.origin, aim_pkt.dest, aim_pkt.type);
-  can_msg.dlc = static_cast<uint8_t>(sizeof(aim_pkt.data));
+  const uint8_t prio = aim::priorityFor(msg.cls, msg.subject);
+  can_msg.id = aim::encodeId(prio, msg.cls, msg.subject, msg.source);
+  can_msg.dlc = 8U;
+
+  // Both MCUs are little-endian — straight copies, no byte swapping (spec).
+  (void)memcpy(&can_msg.data[0], &msg.timestampMs, sizeof(msg.timestampMs));
+  (void)memcpy(&can_msg.data[4], msg.b, sizeof(msg.b));
+  return true;
+}
+
+bool AimCanDriver::unpackMsg(const CanCoreFrame& can_msg, aim::Msg& msg) {
+  AIM_ASSERT((can_msg.id & ~aim::kExtIdMask) == 0U);
+
   if (can_msg.dlc != 8U) {
     return false;
   }
 
-  (void)memcpy(can_msg.data, &aim_pkt.data, sizeof(aim_pkt.data));
-  return true;
-}
-
-bool AimCanDriver::unpackAimPkt(const CanCoreFrame& can_msg, aim::Pkt& aim_pkt) {
-  AIM_ASSERT((can_msg.id & 0xF800U) == 0U);
-  AIM_ASSERT(can_msg.dlc <= 8U);
-
-  aim_pkt.origin = aim::originFromId(can_msg.id);
-  aim_pkt.dest = aim::destFromId(can_msg.id);
-  aim_pkt.type = aim::typeFromId(can_msg.id);
-
-  if (sizeof(aim_pkt.data) != can_msg.dlc) {
+  uint8_t prio = 0U;
+  if (!aim::decodeId(can_msg.id, msg, prio)) {
     return false;
   }
 
-  (void)memcpy(&aim_pkt.data, can_msg.data, can_msg.dlc);
+  (void)memcpy(&msg.timestampMs, &can_msg.data[0], sizeof(msg.timestampMs));
+  (void)memcpy(msg.b, &can_msg.data[4], sizeof(msg.b));
   return true;
 }
 
-void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
+void AimCanDriver::logFailure(bool isBeginFailure, uint32_t canId) const {
   (void)isBeginFailure;
   (void)canId;
 
@@ -75,9 +76,9 @@ void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
   AimStm32CanCore::Stats stats = {};
   _canCore.getStats(stats);
   LOG_ERROR(
-      "AimCanDriver fail op=%s id=0x%03X beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
+      "AimCanDriver fail op=%s id=0x%08lX beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
       op,
-      static_cast<unsigned>(canId),
+      static_cast<unsigned long>(canId),
       0UL,
       static_cast<unsigned long>(stats.txHalErrors),
       static_cast<unsigned long>(stats.rxHalErrors),
@@ -91,9 +92,9 @@ void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
   AimEsp32CanCore::Stats stats = {};
   _canCore.getStats(stats);
   LOG_ERROR(
-      "AimCanDriver fail op=%s id=0x%03X beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
+      "AimCanDriver fail op=%s id=0x%08lX beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
       op,
-      static_cast<unsigned>(canId),
+      static_cast<unsigned long>(canId),
       static_cast<unsigned long>(stats.beginErrors),
       static_cast<unsigned long>(stats.txErrors),
       static_cast<unsigned long>(stats.rxErrors),
@@ -108,32 +109,33 @@ void AimCanDriver::logFailure(bool isBeginFailure, uint16_t canId) const {
 #endif // FLIGHT_BUILD
 }
 
-void AimCanDriver::begin(aim::Node acceptDest) {
+bool AimCanDriver::begin(uint16_t classAcceptMask) {
   if (_initialized) {
-    return;
+    return true;
   }
 
-  if (!_canCore.setAcceptDest(static_cast<uint8_t>(acceptDest))) {
-    LOG_ERROR("AimCanDriver begin failed: invalid destination id=%u", static_cast<unsigned>(acceptDest));
-    _initialized = false;
-    return;
+  if (!_canCore.setClassMask(classAcceptMask)) {
+    LOG_ERROR("AimCanDriver begin failed: invalid class mask=0x%04X", static_cast<unsigned>(classAcceptMask));
+    return false;
   }
 
   _initialized = _canCore.begin();
   if (!_initialized) {
     logFailure(true);
   }
+
+  return _initialized;
 }
 
-bool AimCanDriver::transmit(const aim::Pkt& pkt) {
+bool AimCanDriver::transmit(const aim::Msg& msg) {
   if (!_initialized) {
     LOG_ERROR("AimCanDriver transmit failed: driver not initialized");
     return false;
   }
 
   CanCoreFrame can_msg = {};
-  if (!packAimPkt(pkt, can_msg)) {
-    LOG_ERROR("AimCanDriver transmit failed: packAimPkt rejected frame");
+  if (!packMsg(msg, can_msg)) {
+    LOG_ERROR("AimCanDriver transmit failed: packMsg rejected frame");
     return false;
   }
 
@@ -145,7 +147,7 @@ bool AimCanDriver::transmit(const aim::Pkt& pkt) {
   return sent;
 }
 
-bool AimCanDriver::receive(aim::Pkt& pkt) {
+bool AimCanDriver::receive(aim::Msg& msg) {
   if (!_initialized) {
     LOG_ERROR("AimCanDriver receive failed: driver not initialized");
     return false;
@@ -156,10 +158,10 @@ bool AimCanDriver::receive(aim::Pkt& pkt) {
     return false;
   }
 
-  if (!unpackAimPkt(can_msg, pkt)) {
+  if (!unpackMsg(can_msg, msg)) {
     LOG_ERROR(
-        "AimCanDriver receive failed: unpack rejected id=0x%03X dlc=%u",
-        static_cast<unsigned>(can_msg.id),
+        "AimCanDriver receive failed: unpack rejected id=0x%08lX dlc=%u",
+        static_cast<unsigned long>(can_msg.id),
         static_cast<unsigned>(can_msg.dlc));
     return false;
   }
