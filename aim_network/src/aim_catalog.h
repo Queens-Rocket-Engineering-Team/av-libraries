@@ -107,8 +107,7 @@ enum class NodeState : uint8_t {
   Init      = 0,
   Nominal   = 1,
   SafeState = 2,
-  LowPower  = 3,
-  Fault     = 4,
+  Fault     = 3,
 };
 
 }  // namespace aim
