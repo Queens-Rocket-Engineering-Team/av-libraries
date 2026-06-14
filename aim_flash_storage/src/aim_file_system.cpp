@@ -30,7 +30,7 @@ bool AimFileSystem::begin() {
   fillGeometry();
 
   // Validate geometry before calling into littlefs to avoid assertions
-  if (_lfs_cfg.read_size == 0 || _lfs_cfg.block_count == 0) {
+  if (!_isGeometryValid()) {
     LOG_ERROR("Flash geometry invalid (read=%u, blocks=%u)", _lfs_cfg.read_size, _lfs_cfg.block_count);
     return false;
   }
@@ -63,6 +63,10 @@ void AimFileSystem::fillGeometry() {
   _lfs_cfg.lookahead_size = _device->lookahead_size();
 }
 
+bool AimFileSystem::_isGeometryValid() const {
+  return _lfs_cfg.read_size != 0 && _lfs_cfg.block_count != 0;
+}
+
 void AimFileSystem::end() {
   if (_mounted) {
     lfs_unmount(&_lfs);
@@ -86,7 +90,7 @@ bool AimFileSystem::format() {
   end();
 
   // If the device isn't started or geometry is missing, attempt to fetch it now.
-  if (_lfs_cfg.read_size == 0 || _lfs_cfg.block_count == 0) {
+  if (!_isGeometryValid()) {
     if (!_device->begin()) {
       LOG_ERROR("Flash format aborted: device begin failed");
       return false;
@@ -94,7 +98,7 @@ bool AimFileSystem::format() {
     fillGeometry();
   }
 
-  if (_lfs_cfg.read_size == 0 || _lfs_cfg.block_count == 0) {
+  if (!_isGeometryValid()) {
     LOG_ERROR("Flash format aborted: invalid geometry");
     return false;
   }

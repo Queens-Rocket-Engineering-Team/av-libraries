@@ -32,25 +32,25 @@ struct AimConsoleHook {
  * @param hooks     Static array of application-supplied menu items (may be nullptr).
  * @param hookCount Number of entries in hooks[].
  */
-bool aim_console_init(Stream&               serial,
-                      AimFileSystem&        fs,
-                      AimFlightRecorder&    recorder,
-                      const char*           boardName,
-                      const AimConsoleHook* hooks,
-                      uint8_t               hookCount);
+bool aimConsoleInit(Stream&               serial,
+                    AimFileSystem&        fs,
+                    AimFlightRecorder&    recorder,
+                    const char*           boardName,
+                    const AimConsoleHook* hooks,
+                    uint8_t               hookCount);
 
 /**
  * @brief Returns true while the console is active (any menu visible).
  *
  * Use to gate telemetry writes:
- *   if (!aim_console_is_active()) { serviceLog(); }
+ *   if (!aimConsoleIsActive()) { serviceLog(); }
  */
-bool aim_console_is_active(void);
+bool aimConsoleIsActive(void);
 
 /**
  * @brief Drive the console state machine. Call every loop tick.
  */
-void aim_console_service(void);
+void aimConsoleService(void);
 
 #endif // FLIGHT_BUILD
 

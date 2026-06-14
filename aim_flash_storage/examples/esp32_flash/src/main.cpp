@@ -59,11 +59,11 @@ void setup() {
   if (!s_fs.begin()) { LOG_ERROR("Filesystem mount failed"); return; }
   if (!s_recorder.begin()) { LOG_ERROR("Recorder init failed"); return; }
 
-  aim_console_init(Serial, s_fs, s_recorder, kBoardName, kHooks, 1U);
+  aimConsoleInit(Serial, s_fs, s_recorder, kBoardName, kHooks, 1U);
   LOG_INFO("ready — send 'd' to enter console");
 }
 
 void loop() {
-  if (!aim_console_is_active()) { serviceLog(); }
-  aim_console_service();
+  if (!aimConsoleIsActive()) { serviceLog(); }
+  aimConsoleService();
 }

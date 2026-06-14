@@ -145,8 +145,11 @@ class AimFlightRecorder {
   static constexpr uint32_t kBootMinFreeBytes = 64U * 1024U;
 
   // RDES implementation constants
-  static constexpr uint16_t LVL_2_MAX = 8191U;       // 2^13 - 1
-  static constexpr uint32_t LVL_3_MAX = 1048575UL;   // 2^20 - 1
+  static constexpr uint16_t LVL_2_MAX        = 8191U;    // 2^13 - 1
+  static constexpr uint32_t LVL_3_MAX        = 1048575UL; // 2^20 - 1
+  static constexpr uint8_t  kRdesLvl2Prefix  = 0x80U;    // bit prefix 10x
+  static constexpr uint8_t  kRdesLvl3Prefix  = 0xC0U;    // bit prefix 110x
+  static constexpr uint8_t  kRdesRaw32Prefix = 0xE0U;    // bit prefix 111
 
   void   encodeRaw31(uint8_t* buf, uint32_t val);
   void   encodeRaw32(uint8_t* buf, uint32_t val);

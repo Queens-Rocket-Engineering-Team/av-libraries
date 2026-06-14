@@ -99,10 +99,10 @@ size_t AimFlightRecorder::_encodeRow(uint8_t* buf, const uint32_t* rowData) {
       const uint32_t offset  = signAdd ? (curVal - lastVal) : (lastVal - curVal);
 
       if (offset <= LVL_2_MAX) {
-        buf[ptr++] = 0x80U | (signAdd ? 0x20U : 0U) | (static_cast<uint8_t>(offset >> 8) & 0x1FU);
+        buf[ptr++] = kRdesLvl2Prefix | (signAdd ? 0x20U : 0U) | (static_cast<uint8_t>(offset >> 8) & 0x1FU);
         buf[ptr++] = static_cast<uint8_t>(offset);
       } else if (offset <= LVL_3_MAX) {
-        buf[ptr++] = 0xC0U | (signAdd ? 0x10U : 0U) | (static_cast<uint8_t>(offset >> 16) & 0x0FU);
+        buf[ptr++] = kRdesLvl3Prefix | (signAdd ? 0x10U : 0U) | (static_cast<uint8_t>(offset >> 16) & 0x0FU);
         buf[ptr++] = static_cast<uint8_t>(offset >> 8);
         buf[ptr++] = static_cast<uint8_t>(offset);
       } else if (curVal <= 0x7FFFFFFFU) {
@@ -143,7 +143,7 @@ void AimFlightRecorder::encodeRaw31(uint8_t* buf, uint32_t in) {
 }
 
 void AimFlightRecorder::encodeRaw32(uint8_t* buf, uint32_t in) {
-  buf[0] = 0xE0; // Prefix 111
+  buf[0] = kRdesRaw32Prefix;
   buf[1] = static_cast<uint8_t>(in >> 24);
   buf[2] = static_cast<uint8_t>(in >> 16);
   buf[3] = static_cast<uint8_t>(in >> 8);

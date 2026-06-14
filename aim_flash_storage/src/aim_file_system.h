@@ -185,6 +185,7 @@ class AimFileSystem {
  private:
   // Copies block-device geometry into _lfs_cfg; shared by begin() and format().
   void fillGeometry();
+  bool _isGeometryValid() const;
 
   static int lfs_read(const struct lfs_config* c, lfs_block_t block, lfs_off_t off, void* buffer, lfs_size_t size);
   static int lfs_prog(const struct lfs_config* c, lfs_block_t block, lfs_off_t off, const void* buffer, lfs_size_t size);

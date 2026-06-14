@@ -50,12 +50,12 @@ static void printPrompt(void) {
 
 // --- Public API ---
 
-bool aim_console_init(Stream&               serial,
-                      AimFileSystem&        fs,
-                      AimFlightRecorder&    recorder,
-                      const char*           boardName,
-                      const AimConsoleHook* hooks,
-                      uint8_t               hookCount) {
+bool aimConsoleInit(Stream&               serial,
+                    AimFileSystem&        fs,
+                    AimFlightRecorder&    recorder,
+                    const char*           boardName,
+                    const AimConsoleHook* hooks,
+                    uint8_t               hookCount) {
   s_serial    = &serial;
   s_fs        = &fs;
   s_recorder  = &recorder;
@@ -66,11 +66,11 @@ bool aim_console_init(Stream&               serial,
   return true;
 }
 
-bool aim_console_is_active(void) {
+bool aimConsoleIsActive(void) {
   return s_state != ConsoleState::OFF;
 }
 
-void aim_console_service(void) {
+void aimConsoleService(void) {
   if (s_state == ConsoleState::OFF) {
     if (s_serial->available() > 0 && s_serial->read() == 'd') {
       s_state = ConsoleState::ROOT;
