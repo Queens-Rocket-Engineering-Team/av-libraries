@@ -12,7 +12,7 @@ namespace aim {
 
 // Wire schema version, carried in every HEARTBEAT frame. Independent of the
 // library semver in library.json — do not merge them.
-static constexpr uint8_t kSchemaVersion = 1U;
+static constexpr uint8_t kSchemaVersion = 2U;
 
 // --- CAN ID fields (29-bit extended ID) ---
 // | 28:27 prio | 26:23 class | 22:15 subject | 14:11 source | 10:0 reserved=0 |
@@ -41,30 +41,34 @@ enum class Source : uint8_t {
 
 namespace subject {
 // Valves (shared across CMD / ACK / STATE)
-static constexpr uint8_t Heartbeat       = 0x00;
-static constexpr uint8_t ValveVent       = 0x01;  // UCM
-static constexpr uint8_t ValveN2Supply   = 0x02;  // UCM, no hall
-static constexpr uint8_t ValveFillDump   = 0x03;  // LCM, CAN-commanded
-static constexpr uint8_t ValveMain       = 0x04;  // LCM, CAN-commanded
+static constexpr uint8_t Heartbeat = 0x00;
+static constexpr uint8_t Av204     = 0x01;  // UCM, Vent valve
+static constexpr uint8_t AvSpare   = 0x02;  // UCM, Ground side valve now DON'T ENERGIZE
+static constexpr uint8_t Av203     = 0x03;  // LCM, CAN-commanded
+static constexpr uint8_t Av205     = 0x04;  // LCM, CAN-commanded
+// Power FETs
+static constexpr uint8_t PwrPtUcm  = 0x05;
+static constexpr uint8_t PwrSolLcm = 0x06;
+static constexpr uint8_t PwrPtLcm  = 0x07;
 // Sensors (value = i32, scaling fixed here)
-static constexpr uint8_t PtRunTank       = 0x10;  // PSI x100
-static constexpr uint8_t PtPreInjector   = 0x11;  // PSI x100
-static constexpr uint8_t PtChamber       = 0x12;  // PSI x100
-static constexpr uint8_t Pt4             = 0x13;  // PSI x100
-static constexpr uint8_t TcChamber       = 0x18;  // degC x100
-static constexpr uint8_t SolenoidVoltUcm = 0x20;  // mV
-static constexpr uint8_t SolenoidVoltLcm = 0x21;  // mV
-static constexpr uint8_t BattVolt        = 0x28;  // mV
-static constexpr uint8_t GpsLat          = 0x30;  // degrees x10^7
-static constexpr uint8_t GpsLon          = 0x31;  // degrees x10^7
-static constexpr uint8_t GpsNumSats      = 0x32;  // count
-static constexpr uint8_t Altitude        = 0x38;  // meters x100
+static constexpr uint8_t Pt202        = 0x10;  // UCM, PSI x100
+static constexpr uint8_t PtSpare1     = 0x11;  // UCM, PSI x100, no longer needed
+static constexpr uint8_t Pt204        = 0x12;  // LCM, PSI x100
+static constexpr uint8_t PtSpare2     = 0x13;  // LCM, PSI x100, no longer needed
+static constexpr uint8_t TcLowerValve = 0x18;  // LCM, Celsius x100
+static constexpr uint8_t Volt24Ucm    = 0x20;  // mV
+static constexpr uint8_t VoltSolLcm   = 0x21;  // mV
+static constexpr uint8_t BattVolt     = 0x28;  // mV
+static constexpr uint8_t GpsLat       = 0x30;  // degrees x10^7
+static constexpr uint8_t GpsLon       = 0x31;  // degrees x10^7
+static constexpr uint8_t GpsNumSats   = 0x32;  // count
+static constexpr uint8_t Altitude     = 0x38;  // meters x100
 // Events
 static constexpr uint8_t LowPower         = 0x40;  // detail: 0=exit 1=enter
 static constexpr uint8_t LaunchDetect     = 0x41;  // detail: 1=detected
 static constexpr uint8_t SafeStateEntered = 0x42;  // detail: reason code
 // Time
-static constexpr uint8_t TimeSync        = 0x50;
+static constexpr uint8_t TimeSync = 0x50;
 }  // namespace subject
 
 // Priority is fixed per message definition — never chosen by callers.
@@ -80,8 +84,8 @@ static inline uint8_t priorityFor(Class cls, uint8_t subj) {
     case Class::State:
       return 1U;
     case Class::Sensor:
-      // TODO: what data rate do we need from PTs
-      return (subj >= subject::PtRunTank && subj <= subject::Pt4) ? 2U : 3U;
+      // INFO: higher priority for LCM sensors
+      return (subj >= subject::Pt204) ? 2U : 3U;
     default:
       return 3U;
   }
