@@ -1,6 +1,17 @@
 // logger.cpp
 #include "logger.h"
 
+#include <mutex>
+
+// Serializes the shared output so concurrent log lines can't interleave on one
+// stream. A no-op on single-threaded bare-metal nodes whose libstdc++ has no threads. 
+#if defined(_GLIBCXX_HAS_GTHREADS)
+  static std::mutex s_logMutex;
+  #define LOGGER_LOCK_OUTPUT() std::lock_guard<std::mutex> s_logGuard(s_logMutex)
+#else
+  #define LOGGER_LOCK_OUTPUT() ((void)0)
+#endif
+
 Logger* g_logger = nullptr;
 
 const char* Logger::levelToString(LogLevel level)
@@ -47,5 +58,9 @@ void Logger::log(LogLevel level, const char* fmt, ...)
         va_end(args);
     }
 
-    _output->println(line);
+    // Only the shared output needs serializing — the line buffer is local.
+    {
+        LOGGER_LOCK_OUTPUT();
+        _output->println(line);
+    }
 }
