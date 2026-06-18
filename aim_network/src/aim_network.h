@@ -96,7 +96,7 @@ public:
 
   // Call periodically. Sends a HEARTBEAT only if this node has been silent
   // for more than half the heartbeat interval (any TX proves liveness).
-  void service(aim::NodeState state, uint16_t errorBits);
+  void service(uint32_t nowMs, aim::NodeState state, uint16_t errorBits);
 
   // Local time adjusted by the last TIME sync offset. Steps on resync and
   // backward at midnight — never use it for scheduling or liveness timing.

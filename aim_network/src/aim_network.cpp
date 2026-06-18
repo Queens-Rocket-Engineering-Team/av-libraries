@@ -60,10 +60,10 @@ bool AimNetwork::receive(aim::Msg& m) {
   return true;
 }
 
-void AimNetwork::service(aim::NodeState state, uint16_t errorBits) {
+void AimNetwork::service(uint32_t nowMs, aim::NodeState state, uint16_t errorBits) {
   // Liveness = any valid frame; heartbeat only fills silence (spec: > T/2).
   // Local clock on purpose — synced time steps on resync and at midnight.
-  if ((millis() - _lastTxMs) <= (aim::kHeartbeatTxIntervalMs / 2U)) {
+  if ((nowMs - _lastTxMs) <= (aim::kHeartbeatTxIntervalMs / 2U)) {
     return;
   }
 
