@@ -10,8 +10,8 @@
 static constexpr uint32_t kSerialBaud = 115200U;
 static constexpr uint32_t kCanBaud = 500000U;
 
-static aim::Job g_tick100{100U};
-static aim::Job g_tick1000{1000U};
+static aim::Job g_tick100{100U, 0U};
+static aim::Job g_tick1000{1000U, 0U};
 
 static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
 
@@ -74,6 +74,6 @@ void loop(void) {
     }
   }
 
-  g_aim.service(aim::NodeState::Nominal, 0U);
+  g_aim.service(nowMs, aim::NodeState::Nominal, 0U);
   delay(1U);
 }

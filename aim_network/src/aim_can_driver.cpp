@@ -76,33 +76,33 @@ void AimCanDriver::logFailure(bool isBeginFailure, uint32_t canId) const {
   AimStm32CanCore::Stats stats = {};
   _canCore.getStats(stats);
   LOG_ERROR(
-      "AimCanDriver fail op=%s id=0x%08lX beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
+      "AimCanDriver fail op=%s id=0x%08lX txOk=%lu txErr=%lu rxOk=%lu rxErr=%lu drops=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX esr=0x%08lX",
       op,
       static_cast<unsigned long>(canId),
-      0UL,
+      static_cast<unsigned long>(stats.txFrames),
       static_cast<unsigned long>(stats.txHalErrors),
+      static_cast<unsigned long>(stats.rxFrames),
       static_cast<unsigned long>(stats.rxHalErrors),
       static_cast<unsigned long>(stats.txQueueDrops),
-      0UL,
       static_cast<unsigned long>(stats.busOffEvents),
       static_cast<unsigned long>(stats.errorWarningEvents),
       static_cast<unsigned long>(stats.errorPassiveEvents),
-      static_cast<unsigned long>(stats.lastHalError));
+      static_cast<unsigned long>(stats.lastHalError),
+      static_cast<unsigned long>(stats.lastEsr));
 #elif defined(ARDUINO_ARCH_ESP32)
   AimEsp32CanCore::Stats stats = {};
   _canCore.getStats(stats);
   LOG_ERROR(
-      "AimCanDriver fail op=%s id=0x%08lX beginErr=%lu txErr=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu warn=%lu passive=%lu err=0x%08lX",
+      "AimCanDriver fail op=%s id=0x%08lX txOk=%lu txErr=%lu rxOk=%lu rxErr=%lu drops=%lu filtered=%lu busOff=%lu err=0x%08lX",
       op,
       static_cast<unsigned long>(canId),
-      static_cast<unsigned long>(stats.beginErrors),
+      static_cast<unsigned long>(stats.txFrames),
       static_cast<unsigned long>(stats.txErrors),
+      static_cast<unsigned long>(stats.rxFrames),
       static_cast<unsigned long>(stats.rxErrors),
       0UL,
       static_cast<unsigned long>(stats.filteredFrames),
-      0UL,
-      0UL,
-      0UL,
+      static_cast<unsigned long>(stats.busOffRecoveries),
       static_cast<unsigned long>(stats.lastError));
 #endif
 

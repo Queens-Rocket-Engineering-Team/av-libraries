@@ -33,8 +33,10 @@ static constexpr TimingCandidate kTimingCandidates[kSizeofTimingCandidate] = {
 };
 
 AimStm32CanCore* s_can1Owner = nullptr;
+CAN_HandleTypeDef* s_can1Hcan = nullptr;
 #if defined(CAN2)
 AimStm32CanCore* s_can2Owner = nullptr;
+CAN_HandleTypeDef* s_can2Hcan = nullptr;
 #endif
 #if defined(CAN3)
 AimStm32CanCore* s_can3Owner = nullptr;
@@ -343,11 +345,13 @@ bool AimStm32CanCore::begin() {
 #if defined(CAN1)
   if (_canbus == CAN1) {
     s_can1Owner = this;
+    s_can1Hcan = &_hcan;
   }
 #endif
 #if defined(CAN2)
   if (_canbus == CAN2) {
     s_can2Owner = this;
+    s_can2Hcan = &_hcan;
   }
 #endif
 #if defined(CAN3)
@@ -459,6 +463,12 @@ bool AimStm32CanCore::dequeueRx(Frame& frame) {
 }
 
 void AimStm32CanCore::updateErrorTelemetry() {
+  if (_hcan.Instance != nullptr) {
+    const uint32_t primask = enterCritical();
+    _stats.lastEsr = _hcan.Instance->ESR;
+    exitCritical(primask);
+  }
+
   const uint32_t halError = HAL_CAN_GetError(&_hcan);
   if (halError == HAL_CAN_ERROR_NONE) {
     _lastErrorFlags = 0U;
@@ -495,23 +505,22 @@ void AimStm32CanCore::updateErrorTelemetry() {
 bool AimStm32CanCore::flushTxMailboxes() {
   uint8_t iterations = 0U;
   while (iterations < kTxQueueSize) {
+    const uint32_t primask = enterCritical();
+
     const uint32_t freeLevel = HAL_CAN_GetTxMailboxesFreeLevel(&_hcan);
-    if (freeLevel == 0U) {
+    if ((freeLevel == 0U) || (_txCount == 0U)) {
+      exitCritical(primask);
       break;
     }
 
-    Frame frame = {};
-    {
-      const uint32_t primask = enterCritical();
-      if (_txCount == 0U) {
-        exitCritical(primask);
-        break;
-      }
+    Frame frame = _txQueue[_txTail];
+    _txTail = static_cast<uint8_t>((_txTail + 1U) % kTxQueueSize);
+    _txCount = static_cast<uint8_t>(_txCount - 1U);
 
-      frame = _txQueue[_txTail];
-      _txTail = static_cast<uint8_t>((_txTail + 1U) % kTxQueueSize);
-      _txCount = static_cast<uint8_t>(_txCount - 1U);
+    if (frame.dlc != 8U) {
+      _stats.txHalErrors = _stats.txHalErrors + 1U;
       exitCritical(primask);
+      return false;
     }
 
     CAN_TxHeaderTypeDef header = {};
@@ -522,30 +531,20 @@ bool AimStm32CanCore::flushTxMailboxes() {
     header.DLC = frame.dlc;
     header.TransmitGlobalTime = DISABLE;
 
-    if (frame.dlc != 8U) {
-      const uint32_t primask = enterCritical();
-      _stats.txHalErrors = _stats.txHalErrors + 1U;
-      exitCritical(primask);
-      return false;
-    }
-
     uint8_t payload[8] = {};
     (void)memcpy(payload, frame.data, frame.dlc);
     uint32_t mailbox = 0U;
     const HAL_StatusTypeDef status = HAL_CAN_AddTxMessage(&_hcan, &header, payload, &mailbox);
+
     if (status != HAL_OK) {
-      const uint32_t primask = enterCritical();
       _stats.txHalErrors = _stats.txHalErrors + 1U;
       exitCritical(primask);
       updateErrorTelemetry();
       return false;
     }
 
-    {
-      const uint32_t primask = enterCritical();
-      _stats.txFrames = _stats.txFrames + 1U;
-      exitCritical(primask);
-    }
+    _stats.txFrames = _stats.txFrames + 1U;
+    exitCritical(primask);
 
     iterations = static_cast<uint8_t>(iterations + 1U);
   }
@@ -598,6 +597,8 @@ bool AimStm32CanCore::transmit(const Frame& frame) {
     return false;
   }
 
+  (void)flushTxMailboxes();
+
   const bool queued = enqueueTx(frame);
   if (!queued) {
     return false;
@@ -613,10 +614,7 @@ bool AimStm32CanCore::receive(Frame& frame) {
     return false;
   }
 
-  const bool polled = pollRx();
-  if (!polled) {
-    return false;
-  }
+  (void)pollRx();
 
   const bool rxAvailable = dequeueRx(frame);
   (void)flushTxMailboxes();
@@ -691,6 +689,47 @@ extern "C" void HAL_CAN_ErrorCallback(CAN_HandleTypeDef* hcan) {
 }
 
 #if defined(STM32F1xx)
+
+#if defined(CAN1)
+extern "C" void USB_HP_CAN1_TX_IRQHandler(void) {
+  if (s_can1Hcan != nullptr) {
+    HAL_CAN_IRQHandler(s_can1Hcan);
+  }
+}
+
+extern "C" void USB_LP_CAN1_RX0_IRQHandler(void) {
+  if (s_can1Hcan != nullptr) {
+    HAL_CAN_IRQHandler(s_can1Hcan);
+  }
+}
+
+extern "C" void CAN1_SCE_IRQHandler(void) {
+  if (s_can1Hcan != nullptr) {
+    HAL_CAN_IRQHandler(s_can1Hcan);
+  }
+}
+#endif
+
+#if defined(CAN2)
+extern "C" void CAN2_TX_IRQHandler(void) {
+  if (s_can2Hcan != nullptr) {
+    HAL_CAN_IRQHandler(s_can2Hcan);
+  }
+}
+
+extern "C" void CAN2_RX0_IRQHandler(void) {
+  if (s_can2Hcan != nullptr) {
+    HAL_CAN_IRQHandler(s_can2Hcan);
+  }
+}
+
+extern "C" void CAN2_SCE_IRQHandler(void) {
+  if (s_can2Hcan != nullptr) {
+    HAL_CAN_IRQHandler(s_can2Hcan);
+  }
+}
+#endif
+
 extern "C" void HAL_CAN_MspInit(CAN_HandleTypeDef* hcan) {
   if ((hcan == nullptr) || (hcan->Instance == nullptr)) {
     return;
@@ -710,6 +749,27 @@ extern "C" void HAL_CAN_MspInit(CAN_HandleTypeDef* hcan) {
 
   const bool configured = configureF1CanPins(hcan->Instance);
   AIM_ASSERT(configured);
+
+#if defined(CAN1)
+  if (hcan->Instance == CAN1) {
+    HAL_NVIC_SetPriority(USB_HP_CAN1_TX_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(USB_HP_CAN1_TX_IRQn);
+    HAL_NVIC_SetPriority(USB_LP_CAN1_RX0_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);
+    HAL_NVIC_SetPriority(CAN1_SCE_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(CAN1_SCE_IRQn);
+  }
+#endif
+#if defined(CAN2)
+  if (hcan->Instance == CAN2) {
+    HAL_NVIC_SetPriority(CAN2_TX_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(CAN2_TX_IRQn);
+    HAL_NVIC_SetPriority(CAN2_RX0_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(CAN2_RX0_IRQn);
+    HAL_NVIC_SetPriority(CAN2_SCE_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(CAN2_SCE_IRQn);
+  }
+#endif
 }
 #endif
 

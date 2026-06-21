@@ -59,6 +59,7 @@ public:
     uint32_t errorWarningEvents;
     uint32_t errorPassiveEvents;
     uint32_t lastHalError;
+    uint32_t lastEsr;
   };
 
   AimStm32CanCore(uint32_t baud,

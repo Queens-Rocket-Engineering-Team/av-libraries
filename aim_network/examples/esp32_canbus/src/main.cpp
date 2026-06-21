@@ -8,8 +8,8 @@
 
 static constexpr uint32_t kSerialBaud = 115200U;
 static constexpr uint32_t kCanBaud = 500000U;
-static constexpr int kCanRxPin = 4;
-static constexpr int kCanTxPin = 5;
+static constexpr int kCanRxPin = 2;
+static constexpr int kCanTxPin = 1;
 
 static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
 
@@ -36,6 +36,8 @@ void setup(void) {
 }
 
 void loop(void) {
+  const uint32_t nowMs = millis();
+
   // Bounded RX drain.
   for (uint8_t i = 0U; i < kMaxRxFramesPerLoop; i++) {
     aim::Msg m = {};
@@ -69,7 +71,6 @@ void loop(void) {
     }
   }
 
-  g_aim.service(aim::NodeState::Nominal, 0U);
+  g_aim.service(nowMs, aim::NodeState::Nominal, 0U);
   delay(1U);
 }
-

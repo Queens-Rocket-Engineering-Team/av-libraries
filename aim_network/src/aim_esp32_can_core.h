@@ -21,7 +21,11 @@ public:
     uint32_t rxErrors;
     uint32_t filteredFrames;
     uint32_t beginErrors;
+    uint32_t busOffRecoveries;
     uint32_t lastError;
+    uint32_t lastBusErrCount;
+    uint32_t lastTec;
+    uint32_t lastRec;
   };
 
   AimEsp32CanCore(uint32_t baud, int rxPin, int txPin);
@@ -38,9 +42,13 @@ public:
   void clearStats();
 
 private:
+  static constexpr uint32_t kRecoveryCooldownMs = 500U;
+
   bool validatePins() const;
   bool configureTiming(twai_timing_config_t& config) const;
   bool shouldAcceptId(uint32_t id) const;
+  bool recoverBusOff();
+  void captureTwaiCounters();
 
   uint16_t _classMask;
   uint32_t _baud;
@@ -48,6 +56,7 @@ private:
   int _txPin;
   bool _initialized;
   bool _driverInstalled;
+  uint32_t _lastRecoveryMs;
   Stats _stats;
 };
 

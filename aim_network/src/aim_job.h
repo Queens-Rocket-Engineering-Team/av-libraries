@@ -6,7 +6,7 @@ namespace aim {
 
 struct Job {
   uint32_t periodMs;
-  uint32_t lastMs = 0U;
+  uint32_t lastMs;
 
   bool due(uint32_t nowMs) {
     if ((nowMs - lastMs) < periodMs) {

@@ -70,6 +70,16 @@ bool aimConsoleIsActive(void) {
   return s_state != ConsoleState::OFF;
 }
 
+int aimConsoleWaitRead(Stream& out) {
+  (void)out;
+  if (s_serial == nullptr) { return -1; }
+  const uint32_t start = millis();
+  while (s_serial->available() == 0) {
+    if (static_cast<uint32_t>(millis() - start) > 5000U) { return -1; }
+  }
+  return s_serial->read();
+}
+
 void aimConsoleService(void) {
   if (s_state == ConsoleState::OFF) {
     if (s_serial->available() > 0 && s_serial->read() == 'd') {

@@ -12,6 +12,7 @@ AimEsp32CanCore::AimEsp32CanCore(uint32_t baud, int rxPin, int txPin)
       _txPin(txPin),
       _initialized(false),
       _driverInstalled(false),
+      _lastRecoveryMs(0U),
       _stats{} {
 }
 
@@ -34,7 +35,18 @@ bool AimEsp32CanCore::validatePins() const {
 
 bool AimEsp32CanCore::configureTiming(twai_timing_config_t& config) const {
   if (_baud == 500000U) {
-    config = TWAI_TIMING_CONFIG_500KBITS();
+    // Match the STM32 bxCAN sample point exactly. The STM32 nodes run
+    // 1 + BS1(13) + BS2(2) = 16 TQ → 87.5% sample point. The IDF macro
+    // TWAI_TIMING_CONFIG_500KBITS() samples at 80% (20 TQ), and that
+    // mismatch causes the ESP32 to read back bit errors on its own long
+    // data frames (RX is fine; it resyncs on the STM32's edges). With an
+    // 80 MHz source: brp=10, 1 + tseg_1(13) + tseg_2(2) = 16 TQ → 500 kbps.
+    config = {};
+    config.brp = 10;
+    config.tseg_1 = 13;
+    config.tseg_2 = 2;
+    config.sjw = 2;            // max for tseg_2=2; extra resync margin
+    config.triple_sampling = false;
     return true;
   }
   if (_baud == 250000U) {
@@ -141,9 +153,45 @@ bool AimEsp32CanCore::begin() {
     return false;
   }
 
+  const uint32_t alerts = TWAI_ALERT_ERR_PASS |
+                          TWAI_ALERT_BUS_ERROR |
+                          TWAI_ALERT_BUS_OFF |
+                          TWAI_ALERT_BUS_RECOVERED |
+                          TWAI_ALERT_TX_FAILED;
+  status = twai_reconfigure_alerts(alerts, nullptr);
+  if (status != ESP_OK) {
+    LOG_WARN(
+        "AimEsp32CanCore begin: twai_reconfigure_alerts status=%d",
+        static_cast<int>(status));
+  }
+
   _stats.lastError = static_cast<uint32_t>(ESP_OK);
   _initialized = true;
   return true;
+}
+
+void AimEsp32CanCore::captureTwaiCounters() {
+  twai_status_info_t info = {};
+  if (twai_get_status_info(&info) == ESP_OK) {
+    _stats.lastBusErrCount = info.bus_error_count;
+    _stats.lastTec = info.tx_error_counter;
+    _stats.lastRec = info.rx_error_counter;
+  }
+}
+
+bool AimEsp32CanCore::recoverBusOff() {
+  const uint32_t nowMs = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
+  if ((nowMs - _lastRecoveryMs) < kRecoveryCooldownMs) {
+    return false;
+  }
+  _lastRecoveryMs = nowMs;
+  _stats.busOffRecoveries = _stats.busOffRecoveries + 1U;
+
+  LOG_WARN(
+      "AimEsp32CanCore bus-off recovery #%lu",
+      static_cast<unsigned long>(_stats.busOffRecoveries));
+
+  return begin();
 }
 
 bool AimEsp32CanCore::transmit(const Frame& frame) {
@@ -172,14 +220,31 @@ bool AimEsp32CanCore::transmit(const Frame& frame) {
   msg.data_length_code = frame.dlc;
   (void)memcpy(msg.data, frame.data, frame.dlc);
 
-  const esp_err_t status = twai_transmit(&msg, 0);
+  esp_err_t status = twai_transmit(&msg, 0);
+
+  if (status == ESP_ERR_INVALID_STATE) {
+    if (recoverBusOff()) {
+      status = twai_transmit(&msg, 0);
+    }
+    if (status != ESP_OK) {
+      captureTwaiCounters();
+      _stats.txErrors = _stats.txErrors + 1U;
+      _stats.lastError = static_cast<uint32_t>(status);
+      return false;
+    }
+  }
+
   if (status != ESP_OK) {
+    captureTwaiCounters();
     _stats.txErrors = _stats.txErrors + 1U;
     _stats.lastError = static_cast<uint32_t>(status);
     LOG_ERROR(
-        "AimEsp32CanCore transmit failed: id=0x%08lX status=%d",
+        "AimEsp32CanCore transmit failed: id=0x%08lX status=%d busErr=%lu tec=%lu rec=%lu",
         static_cast<unsigned long>(msg.identifier),
-        static_cast<int>(status));
+        static_cast<int>(status),
+        static_cast<unsigned long>(_stats.lastBusErrCount),
+        static_cast<unsigned long>(_stats.lastTec),
+        static_cast<unsigned long>(_stats.lastRec));
     return false;
   }
 

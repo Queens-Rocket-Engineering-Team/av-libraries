@@ -52,6 +52,16 @@ bool aimConsoleIsActive(void);
  */
 void aimConsoleService(void);
 
+/**
+ * @brief Blocking read of the next console byte, for multi-key hook handlers.
+ *
+ * Spins until a byte arrives on the console stream (or a short timeout
+ * elapses) and returns it. Returns -1 on timeout or if the console is
+ * uninitialised. Intended for use inside an AimConsoleHook handler that needs
+ * to read arguments (e.g. "v <0-3> <0|1>").
+ */
+int aimConsoleWaitRead(Stream& out);
+
 #endif // FLIGHT_BUILD
 
 #endif // AIM_CONSOLE_H
