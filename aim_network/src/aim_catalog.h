@@ -93,10 +93,10 @@ static inline uint8_t priorityFor(Class cls, uint8_t subj) {
 
 // --- Payload enums (bytes 4–7, layouts per class in the protocol doc) ---
 
-enum class ValveState : uint8_t {
+enum class ControlState : uint8_t {
   Closed  = 0,
   Open    = 1,
-  Unknown = 2,  // valves without hall sensing always report Unknown
+  Unknown = 2,  // controls without feedback/sensing report Unknown
   Fault   = 3,
 };
 

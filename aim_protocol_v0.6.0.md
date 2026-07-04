@@ -78,8 +78,8 @@ All frames: **bytes 0–3 = timestamp, ms since start of day (uint32)**, from se
 | HEARTBEAT | node_state (u8), error_bits (u16), schema_version (u8) |
 | EVENT | detail (u8, per subject), 0, 0, 0 |
 
-Valve state enum (used in CMD desired, STATE commanded/hall): `0=CLOSED, 1=OPEN, 2=UNKNOWN, 3=FAULT`.
-`energized`: `0=OFF, 1=ON`. Valves without hall sensing (N2 supply) report hall = UNKNOWN always.
+Control state enum (used in CMD desired, STATE commanded/hall): `0=CLOSED, 1=OPEN, 2=UNKNOWN, 3=FAULT`.
+`energized`: `0=OFF, 1=ON`. Controls without feedback/sensing (e.g. N2 supply) report hall = UNKNOWN always.
 
 ACK result enum: `0=ACCEPTED, 1=REJECT_SAFE_STATE, 2=REJECT_BAD_SUBJECT, 3=REJECT_BAD_STATE_VALUE`
 (spare values reserved for faults discovered in testing).
@@ -87,32 +87,31 @@ ACK result enum: `0=ACCEPTED, 1=REJECT_SAFE_STATE, 2=REJECT_BAD_SUBJECT, 3=REJEC
 **Command idempotency rule:** a CMD re-received with an already-processed seq number is re-ACKed
 with the original result and otherwise ignored. UCM retry = timeout + resend, no handshake needed.
 
-Node_state enum: `0=INIT, 1=NOMINAL, 2=SAFE_STATE, 3=LOW_POWER, 4=FAULT` **[?]**
+Node state enum: `0=INIT, 1=NOMINAL, 2=SAFE_STATE, 3=FAULT`
 
 ---
 
 ## 3. Subject Catalog
 
-### Valves (subjects shared by CMD / ACK / STATE)
+### Controls (subjects shared by CMD / ACK / STATE)
 
 | Subject | Name | Board | Hall? | Fail-safe bias | CAN-commanded? | STATE rate |
 |---|---|---|---|---|---|---|
-| 0x01 | VALVE_VENT | UCM | yes | open (spring) **[?]** | no (Wi-Fi/local) | 10 Hz **[?]** |
-| 0x02 | VALVE_N2_SUPPLY | UCM | no (COTS) | **[?]** | no (Wi-Fi/local) | 10 Hz **[?]** |
-| 0x03 | VALVE_FILL_DUMP | LCM | yes | open (N2O pressure) **[?]** | **yes** | 10 Hz **[?]** |
-| 0x04 | VALVE_MAIN | LCM | yes | closed | **yes** | 10 Hz **[?]** |
+| 0x01 | VALVE_VENT | UCM | yes | open (spring) | no (Wi-Fi/local) | 1-2 Hz |
+| 0x02 | VALVE_N2_SUPPLY | UCM | no (COTS) | open (spring) | no (Wi-Fi/local) | 1-2 Hz |
+| 0x03 | VALVE_FILL_DUMP | LCM | yes | open (N2O pressure) | **yes** | 1-2 Hz |
+| 0x04 | VALVE_MAIN | LCM | yes | closed | **yes** | 1-2 Hz |
 
 *UCM publishes STATE for its own valves so Comms/LoRa sees all four through one mechanism.*
-**[?] Confirm the valve↔board mapping and biases with OX — PDR says vent + fill/dump + main; you listed "fill, dump" on LProp.**
 
 ### Sensors (class SENSOR, value = i32)
 
-| Subject | Name | Board | Units (scaling) | Rate **[?]** | Prio |
+| Subject | Name | Board | Units (scaling) | Rate | Prio |
 |---|---|---|---|---|---|
-| 0x10 | PT_RUN_TANK | **[?]** | PSI ×100 | 50 Hz | 2 |
-| 0x11 | PT_PRE_INJECTOR | **[?]** | PSI ×100 | 50 Hz | 2 |
-| 0x12 | PT_CHAMBER | LCM **[?]** | PSI ×100 | 50 Hz | 2 |
-| 0x13 | PT_4 **[?]** name/location | **[?]** | PSI ×100 | 50 Hz | 2 |
+| 0x10 | PT_RUN_TANK (PT202) | UCM | PSI ×100 | 50 Hz | 2 |
+| 0x11 | PT_PRE_INJECTOR (PtSpare1) | UCM | PSI ×100 | 50 Hz | 2 |
+| 0x12 | PT_CHAMBER (Pt204) | LCM | PSI ×100 | 50 Hz | 2 |
+| 0x13 | PT_4 (PtSpare2) | LCM | PSI ×100 | 50 Hz | 2 |
 | 0x18 | TC_CHAMBER | LCM | °C ×100 | 5 Hz | 3 |
 | 0x20 | SOLENOID_VOLT_UCM | UCM | mV | 5 Hz | 3 |
 | 0x21 | SOLENOID_VOLT_LCM | LCM | mV | 5 Hz | 3 |
@@ -130,8 +129,8 @@ this table and the generated header, nowhere else.
 | Subject | Name | Owner | detail byte | Prio |
 |---|---|---|---|---|
 | 0x40 | LOW_POWER | Power | 0=exit, 1=enter | 3 |
-| 0x41 | LAUNCH_DETECT | Power **[?]** | 1=detected | 3 |
-| 0x42 | SAFE_STATE_ENTERED | any | reason code **[?]** | 0 |
+| 0x41 | LAUNCH_DETECT | Power | 1=detected | 3 |
+| 0x42 | SAFE_STATE_ENTERED | any | reason code | 0 |
 
 ### Time / Heartbeat
 
@@ -145,10 +144,9 @@ this table and the generated header, nowhere else.
 ## 4. Liveness & Safing (summary of agreed behavior)
 
 - Liveness timer per watched node resets on **any valid frame** from it.
-- LCM watches UCM; UCM watches LCM; Comms watches everyone (telemetry health only). **[?]**
-- Timeout → de-energize all local solenoids (hardware fail-safe positions). Timeout values TBD **[?]**
-  — consider different pad vs. flight values.
-- Post-launch safing: LCM-local timer (4–5 min **[?]**) armed by LAUNCH_DETECT; runs even if bus is dead.
+- LCM watches UCM; UCM watches LCM; Comms watches everyone (telemetry health only).
+- Timeout → de-energize all local solenoids (hardware fail-safe positions). Timeout values TBD — consider different pad vs. flight values.
+- Post-launch safing: LCM-local timer (4–5 min) armed by LAUNCH_DETECT; runs even if bus is dead.
 - ACK means "command received and accepted" — never "valve moved." Physical confirmation is the
   STATE frame (commanded / energized / hall), judged by humans at the GUI.
 
@@ -159,10 +157,8 @@ schema_version in every heartbeat (bump on any catalog change; mismatch = ground
 
 ## Open items
 
-1. Valve↔board mapping + fail-safe biases (OX)
-2. PT names/locations ×4; all sensor rates
-3. Heartbeat/liveness timeout values, pad vs flight
-4. Who owns LAUNCH_DETECT (Power physical vs Altimeter accel)
-5. Node_state + safe-state reason codes
-6. Midnight rollover policy: clock steps backward at 00:00; post-processing must detect the
+1. PT names/locations ×4; all sensor rates
+2. Heartbeat/liveness timeout values, pad vs flight
+3. Who owns LAUNCH_DETECT (Power physical vs Altimeter accel)
+4. Midnight rollover policy: clock steps backward at 00:00; post-processing must detect the
    negative jump. Accepted quirk — written here so it's never a 2 a.m. mystery.
