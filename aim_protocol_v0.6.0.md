@@ -23,7 +23,7 @@ Rules:
 - **Priority is fixed per message definition** (column in the catalog), never chosen at runtime.
 - **Reserved bits are always 0.** Transmit 0, receivers ignore. Not allocated until a real need exists.
 - **Subject identifies the data, not the route.** Same subject is reused across classes
-  (e.g. subject `VALVE_MAIN` appears as CMD, ACK, and STATE).
+  (e.g. subject `VALVE_4` appears as CMD, ACK, and STATE).
 - **Source is traceability, not routing.** No destination field; consumers filter by class/subject.
 
 ### Priority levels (2 bits)
@@ -97,10 +97,10 @@ Node state enum: `0=INIT, 1=NOMINAL, 2=SAFE_STATE, 3=FAULT`
 
 | Subject | Name | Board | Hall? | Fail-safe bias | CAN-commanded? | STATE rate |
 |---|---|---|---|---|---|---|
-| 0x01 | VALVE_VENT | UCM | yes | open (spring) | no (Wi-Fi/local) | 1-2 Hz |
-| 0x02 | VALVE_N2_SUPPLY | UCM | no (COTS) | open (spring) | no (Wi-Fi/local) | 1-2 Hz |
-| 0x03 | VALVE_FILL_DUMP | LCM | yes | open (N2O pressure) | **yes** | 1-2 Hz |
-| 0x04 | VALVE_MAIN | LCM | yes | closed | **yes** | 1-2 Hz |
+| 0x01 | VALVE_1 | UCM | yes | open (spring) | no (Wi-Fi/local) | 1-2 Hz |
+| 0x02 | VALVE_2 | UCM | no (COTS) | open (spring) | no (Wi-Fi/local) | 1-2 Hz |
+| 0x03 | VALVE_3 | LCM | yes | open (N2O pressure) | **yes** | 1-2 Hz |
+| 0x04 | VALVE_4 | LCM | yes | closed | **yes** | 1-2 Hz |
 
 *UCM publishes STATE for its own valves so Comms/LoRa sees all four through one mechanism.*
 
@@ -108,10 +108,10 @@ Node state enum: `0=INIT, 1=NOMINAL, 2=SAFE_STATE, 3=FAULT`
 
 | Subject | Name | Board | Units (scaling) | Rate | Prio |
 |---|---|---|---|---|---|
-| 0x10 | PT_RUN_TANK (PT202) | UCM | PSI ×100 | 50 Hz | 2 |
-| 0x11 | PT_PRE_INJECTOR (PtSpare1) | UCM | PSI ×100 | 50 Hz | 2 |
-| 0x12 | PT_CHAMBER (Pt204) | LCM | PSI ×100 | 50 Hz | 2 |
-| 0x13 | PT_4 (PtSpare2) | LCM | PSI ×100 | 50 Hz | 2 |
+| 0x10 | PT_1 | UCM | PSI ×100 | 50 Hz | 2 |
+| 0x11 | PT_2 | UCM | PSI ×100 | 50 Hz | 2 |
+| 0x12 | PT_3 | LCM | PSI ×100 | 50 Hz | 2 |
+| 0x13 | PT_4 | LCM | PSI ×100 | 50 Hz | 2 |
 | 0x18 | TC_CHAMBER | LCM | °C ×100 | 5 Hz | 3 |
 | 0x20 | SOLENOID_VOLT_UCM | UCM | mV | 5 Hz | 3 |
 | 0x21 | SOLENOID_VOLT_LCM | LCM | mV | 5 Hz | 3 |
