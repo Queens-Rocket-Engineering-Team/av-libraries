@@ -97,7 +97,7 @@ static inline constexpr uint16_t classBit(Class cls) {
 }
 
 static inline constexpr bool isZeroTimestamp(Class cls, uint8_t subject) {
-  return (cls == Class::Sensor && subject == subject::GpsPosition);
+  return (cls == Class::Cmd) || (cls == Class::Ack) || (cls == Class::Sensor && subject == subject::GpsPosition);
 }
 
 }  // namespace aim

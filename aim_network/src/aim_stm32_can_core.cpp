@@ -534,7 +534,6 @@ bool AimStm32CanCore::flushTxMailboxes() {
 
     uint8_t payload[8] = {};
     (void)memcpy(payload, frame.data, frame.dlc);
-    // why only mailbox zero here?
     uint32_t mailbox = 0U;
     const HAL_StatusTypeDef status = HAL_CAN_AddTxMessage(&_hcan, &header, payload, &mailbox);
 

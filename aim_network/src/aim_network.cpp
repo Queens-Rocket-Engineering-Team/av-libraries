@@ -14,7 +14,7 @@ AimNetwork::AimNetwork(AimCanHardware* hardware, aim::Source self)
       _self(self),
       _timeOffset(0),
       _lastTxMs(0U),
-      _lastSyncTimeMs(0U) {
+      _lastSyncTimeMs(0xFFFFFFFFU) {
   AIM_ASSERT(static_cast<uint8_t>(self) != 0U);
   AIM_ASSERT(static_cast<uint8_t>(self) <= 0xEU);
 }
@@ -49,9 +49,16 @@ bool AimNetwork::send(aim::Msg& m) {
   } else if (aim::isZeroTimestamp(m.cls, m.subject)) {
     m.offsetMs = 0;
   } else {
-    uint32_t baseTime = (_lastSyncTimeMs == 0U) ? 0U : _lastSyncTimeMs;
-    uint32_t offset = m.timestampMs - baseTime;
-    m.offsetMs = static_cast<uint16_t>(offset & 0xFFFFU);
+    if (_lastSyncTimeMs == 0xFFFFFFFFU) {
+      m.offsetMs = 0xFFFFU;
+    } else {
+      uint32_t delta = m.timestampMs - _lastSyncTimeMs;
+      if (delta > 65535U) {
+        m.offsetMs = 0xFFFFU;
+      } else {
+        m.offsetMs = static_cast<uint16_t>(delta);
+      }
+    }
   }
 
   aim::Frame frame = {};
@@ -95,7 +102,11 @@ bool AimNetwork::receive(aim::Msg& m) {
   } else if (aim::isZeroTimestamp(m.cls, m.subject)) {
     m.timestampMs = syncedMillis();
   } else {
-    m.timestampMs = _lastSyncTimeMs + m.offsetMs;
+    if (_lastSyncTimeMs == 0xFFFFFFFFU) {
+      m.timestampMs = 0U;
+    } else {
+      m.timestampMs = _lastSyncTimeMs + m.offsetMs;
+    }
   }
 
   return true;
