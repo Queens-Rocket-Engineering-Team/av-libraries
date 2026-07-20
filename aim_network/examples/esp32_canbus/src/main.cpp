@@ -6,7 +6,7 @@
 #include <logger.h>
 
 static constexpr uint32_t kSerialBaud = 115200U;
-static constexpr uint32_t kCanBaud = 500000U;
+static constexpr uint32_t kCanBaud = 1000000U;
 static constexpr int kCanRxPin = 2;
 static constexpr int kCanTxPin = 1;
 

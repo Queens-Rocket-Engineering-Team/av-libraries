@@ -35,19 +35,12 @@ bool AimEsp32CanCore::validatePins() const {
 }
 
 bool AimEsp32CanCore::configureTiming(twai_timing_config_t& config) const {
+  if (_baud == 1000000U) {
+    config = TWAI_TIMING_CONFIG_1MBITS();
+    return true;
+  }
   if (_baud == 500000U) {
-    // Match the STM32 bxCAN sample point exactly. The STM32 nodes run
-    // 1 + BS1(13) + BS2(2) = 16 TQ → 87.5% sample point. The IDF macro
-    // TWAI_TIMING_CONFIG_500KBITS() samples at 80% (20 TQ), and that
-    // mismatch causes the ESP32 to read back bit errors on its own long
-    // data frames (RX is fine; it resyncs on the STM32's edges). With an
-    // 80 MHz source: brp=10, 1 + tseg_1(13) + tseg_2(2) = 16 TQ → 500 kbps.
-    config = {};
-    config.brp = 10;
-    config.tseg_1 = 13;
-    config.tseg_2 = 2;
-    config.sjw = 2;            // max for tseg_2=2; extra resync margin
-    config.triple_sampling = false;
+    config = TWAI_TIMING_CONFIG_500KBITS();
     return true;
   }
   if (_baud == 250000U) {

@@ -1,6 +1,6 @@
-# AIM Network Protocol — v0.7.0 DRAFT
+# AIM Network Protocol — v0.7.0
 
-CAN 2.0B, 29-bit extended ID, 500 kbps. All multi-byte fields **little-endian**
+CAN 2.0B, 29-bit extended ID, 1 Mbps. All multi-byte fields **little-endian**
 (decided: both MCUs are LE, no interop requirement with anyone else; zero byte-swapping).
 
 **Unique-ID invariant:** every frame carries its sender's source bits, therefore no two nodes
@@ -42,11 +42,11 @@ Rules:
 
 | ID | Node |
 |---|---|
-| 0x1 | Comms |
-| 0x2 | UCM |
-| 0x3 | LCM |
-| 0x4 | Altimeter |
-| 0x5 | GPS |
+| 0x1 | UCM |
+| 0x2 | LCM |
+| 0x3 | Altimeter |
+| 0x4 | GPS |
+| 0x5 | Comms |
 | 0x6 | Power |
 | 0x7–0xE | spare (test rig, debug dongle, future boards) |
 
@@ -89,23 +89,25 @@ Certain subjects (such as `GpsPosition`) are designated as **Zero-Timestamp** fr
 
 | Subject | Name | Board | Hall? | Fail-safe bias | CAN-commanded? | STATE rate |
 |---|---|---|---|---|---|---|
-| 0x01 | Av204 | UCM | yes | open (spring) | no (Wi-Fi/local) | 1-2 Hz |
-| 0x03 | Av203 | LCM | yes | open (N2O pressure) | **yes** | 1-2 Hz |
-| 0x04 | Av205 | LCM | yes | closed | **yes** | 1-2 Hz |
+| 0x01 | Av203 | LCM | yes | open (N2O pressure) | **yes** | 1-2 Hz |
+| 0x02 | Av205 | LCM | yes | closed | **yes** | 1-2 Hz |
+| 0x03 | Av204 | UCM | yes | open (spring) | no (Wi-Fi/local) | 1-2 Hz |
 
 ### Sensors (class SENSOR, value = i32 unless noted)
 
 | Subject | Name | Board | Units (scaling) | Rate | Prio (Jitter Protection) |
 |---|---|---|---|---|---|
-| 0x10 | Pt202 | UCM | PSI ×100 | 50 Hz | High |
-| 0x12 | Pt204 | LCM | PSI ×100 | 100+ Hz | High |
-| 0x18 | TcLowerValve | LCM | °C ×100 | 5 Hz | Medium |
-| 0x20 | Volt24Ucm | UCM | mV | 5 Hz | Medium |
-| 0x21 | VoltSolLcm | LCM | mV | 5 Hz | Medium |
-| 0x28 | BattVolt | Power | mV | 1 Hz | Low |
-| 0x30 | GpsPosition | GPS | lat (i32) + lon (i32) | 5 Hz | Low |
-| 0x32 | GpsNumSats | GPS | count | 1 Hz | Low |
-| 0x38 | Altitude | Altimeter | meters ×100 | 10 Hz | Low |
+| 0x10 | Pt204 | LCM | PSI ×100 | 100+ Hz | High |
+| 0x11 | Pt202 | UCM | PSI ×100 | 50 Hz | High |
+| 0x12 | Acceleration | Altimeter | m/s² ×100 | 50 Hz | High |
+| 0x13 | Velocity | Altimeter | m/s ×100 | 50 Hz | High |
+| 0x15 | TcLowerValve | LCM | °C ×100 | 5 Hz | High |
+| 0x18 | Altitude | Altimeter | meters ×100 | 10 Hz | High |
+| 0x19 | GpsPosition | GPS | lat (i32) + lon (i32) | 5 Hz | High |
+| 0x20 | BattVolt | Power | mV | 1 Hz | Medium |
+| 0x21 | GpsNumSats | GPS | count | 1 Hz | Medium |
+| 0x32 | Volt24Ucm | UCM | mV | 5 Hz | Low |
+| 0x33 | VoltSolLcm | LCM | mV | 5 Hz | Low |
 
 ### Events (class EVENT)
 

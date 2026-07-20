@@ -30,11 +30,11 @@ enum class Class : uint8_t {
 
 enum class Source : uint8_t {
   // 0x0 deliberately invalid: an all-zero ID field is a wiring-fault symptom.
-  Comms     = 0x1,
-  Ucm       = 0x2,
-  Lcm       = 0x3,
-  Altimeter = 0x4,
-  Gps       = 0x5,
+  Ucm       = 0x1,
+  Lcm       = 0x2,
+  Altimeter = 0x3,
+  Gps       = 0x4,
+  Comms     = 0x5,
   Power     = 0x6,
   // 0x7–0xE spare (test rig, debug dongle, future boards)
 };
@@ -42,23 +42,25 @@ enum class Source : uint8_t {
 namespace subject {
 // Valves (shared across CMD / ACK / STATE)
 static constexpr uint8_t Heartbeat = 0x00;
-static constexpr uint8_t Av204     = 0x01;  // UCM, Vent valve
-static constexpr uint8_t Av203     = 0x03;  // LCM, CAN-commanded
-static constexpr uint8_t Av205     = 0x04;  // LCM, CAN-commanded
+static constexpr uint8_t Av203     = 0x01;  // LCM, CAN-commanded
+static constexpr uint8_t Av205     = 0x02;  // LCM, CAN-commanded
+static constexpr uint8_t Av204     = 0x03;  // UCM, Vent valve
 // Power FETs
 static constexpr uint8_t PwrPtUcm  = 0x05;
 static constexpr uint8_t PwrSolLcm = 0x06;
 static constexpr uint8_t PwrPtLcm  = 0x07;
 // Sensors (value = i32, scaling fixed here)
-static constexpr uint8_t Pt202        = 0x10;  // UCM, PSI x100
-static constexpr uint8_t Pt204        = 0x12;  // LCM, PSI x100
-static constexpr uint8_t TcLowerValve = 0x18;  // LCM, Celsius x100
-static constexpr uint8_t Volt24Ucm    = 0x20;  // mV
-static constexpr uint8_t VoltSolLcm   = 0x21;  // mV
-static constexpr uint8_t BattVolt     = 0x28;  // mV
-static constexpr uint8_t GpsPosition   = 0x30;  // Fused GPS Position (lat: b[0..3], lon: b[4..7])
-static constexpr uint8_t GpsNumSats   = 0x32;  // count
-static constexpr uint8_t Altitude     = 0x38;  // meters x100
+static constexpr uint8_t Pt204        = 0x10;  // LCM, PSI x100
+static constexpr uint8_t Pt202        = 0x11;  // UCM, PSI x100
+static constexpr uint8_t Acceleration = 0x12;  // Altimeter, m/s^2 x100
+static constexpr uint8_t Velocity     = 0x13;  // Altimeter, m/s x100
+static constexpr uint8_t TcLowerValve = 0x15;  // LCM, Celsius x100
+static constexpr uint8_t Altitude     = 0x18;  // meters x100
+static constexpr uint8_t GpsPosition  = 0x19;  // Fused GPS Position (lat: b[0..3], lon: b[4..7])
+static constexpr uint8_t BattVolt     = 0x20;  // mV
+static constexpr uint8_t GpsNumSats   = 0x21;  // count
+static constexpr uint8_t Volt24Ucm    = 0x32;  // mV
+static constexpr uint8_t VoltSolLcm   = 0x33;  // mV                                              //
 // Events
 static constexpr uint8_t LowPower         = 0x40;  // detail: 0=exit 1=enter
 static constexpr uint8_t LaunchDetect     = 0x41;  // detail: 1=detected
