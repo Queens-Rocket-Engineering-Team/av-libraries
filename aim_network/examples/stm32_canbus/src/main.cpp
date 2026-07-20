@@ -67,7 +67,7 @@ void loop(void) {
     aim::Msg m = {};
     m.cls = aim::Class::Time;
     m.subject = aim::subject::TimeSync;
-    // Timestamp field IS the payload; b[0] flags bit0=0 (not GPS-disciplined).
+    // Broadcast clock synchronization baseline
     if (!g_aim.send(m)) {
       LOG_ERROR("Time TX failed");
     }

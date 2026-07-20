@@ -65,7 +65,7 @@ Certain subjects (such as `GpsPosition`) are designated as **Zero-Timestamp** fr
 | Class | Byte 0–1 | Byte 2–7 (Data b[6]) |
 |---|---|---|
 | **EVENT** | offsetMs (u16) | detail (u8), 0, 0, 0, 0, 0 |
-| **TIME** (Sync)* | offsetMs = 0 | timestampMs (u32), flags (u8: bit0=GPS-disciplined), 0 |
+| **TIME** (Sync)* | offsetMs = 0 | timestampMs (u32), 0, 0 |
 | **CMD** | offsetMs (u16) | seq (u8), desired_state (u8), 0, 0, 0, 0 |
 | **ACK** | offsetMs (u16) | seq (u8), result (u8), 0, 0, 0, 0 |
 | **STATE** | offsetMs (u16) | commanded (u8), energized (u8), hall (u8), 0, 0, 0 |
@@ -121,7 +121,7 @@ Sent at Event priority class (`0x0`); repeat 3× at 100 ms spacing on state chan
 
 | Subject | Name | Notes |
 |---|---|---|
-| 0x50 | TimeSync | 1 Hz master sync. Master = UCM pre-launch, GPS post-launch. |
+| 0x50 | TimeSync | 1 Hz clock master synchronization baseline. |
 | 0x00 | Heartbeat | Subject 0; source field identifies node. Sent only if node silent > T/2. |
 
 ---
