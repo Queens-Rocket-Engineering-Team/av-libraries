@@ -1,4 +1,5 @@
 #include "aim_stm32_can_core.h"
+#include "aim_network.h"
 
 #if defined(ARDUINO_ARCH_STM32)
 
@@ -160,7 +161,7 @@ AimStm32CanCore::AimStm32CanCore(uint32_t baud, CAN_TypeDef* canbus)
       _stats{},
       _lastErrorFlags(0U),
       _hcan{} {
-  static_assert(sizeof(Frame::data) == 8U, "CAN frame data must be 8 bytes");
+  static_assert(sizeof(aim::Frame::data) == 8U, "CAN frame data must be 8 bytes");
 }
 
 bool AimStm32CanCore::setClassMask(uint16_t mask) {
@@ -417,7 +418,7 @@ bool AimStm32CanCore::begin() {
   return true;
 }
 
-bool AimStm32CanCore::enqueueTx(const Frame& frame) {
+bool AimStm32CanCore::enqueueTx(const aim::Frame& frame) {
   const uint32_t primask = enterCritical();
   if (_txCount >= kTxQueueSize) {
     _stats.txQueueDrops = _stats.txQueueDrops + 1U;
@@ -432,7 +433,7 @@ bool AimStm32CanCore::enqueueTx(const Frame& frame) {
   return true;
 }
 
-bool AimStm32CanCore::pushRx(const Frame& frame) {
+bool AimStm32CanCore::pushRx(const aim::Frame& frame) {
   const uint32_t primask = enterCritical();
   if (_rxCount >= kRxQueueSize) {
     _stats.rxQueueDrops = _stats.rxQueueDrops + 1U;
@@ -448,7 +449,7 @@ bool AimStm32CanCore::pushRx(const Frame& frame) {
   return true;
 }
 
-bool AimStm32CanCore::dequeueRx(Frame& frame) {
+bool AimStm32CanCore::dequeueRx(aim::Frame& frame) {
   const uint32_t primask = enterCritical();
   if (_rxCount == 0U) {
     exitCritical(primask);
@@ -513,7 +514,7 @@ bool AimStm32CanCore::flushTxMailboxes() {
       break;
     }
 
-    Frame frame = _txQueue[_txTail];
+    aim::Frame frame = _txQueue[_txTail];
     _txTail = static_cast<uint8_t>((_txTail + 1U) % kTxQueueSize);
     _txCount = static_cast<uint8_t>(_txCount - 1U);
 
@@ -533,6 +534,7 @@ bool AimStm32CanCore::flushTxMailboxes() {
 
     uint8_t payload[8] = {};
     (void)memcpy(payload, frame.data, frame.dlc);
+    // why only mailbox zero here?
     uint32_t mailbox = 0U;
     const HAL_StatusTypeDef status = HAL_CAN_AddTxMessage(&_hcan, &header, payload, &mailbox);
 
@@ -573,7 +575,7 @@ bool AimStm32CanCore::pollRx() {
     }
 
     if ((header.IDE == CAN_ID_EXT) && (header.RTR == CAN_RTR_DATA) && (header.DLC <= 8U)) {
-      Frame frame = {};
+      aim::Frame frame = {};
       frame.id = header.ExtId & aim::kExtIdMask;
       frame.dlc = static_cast<uint8_t>(header.DLC);
       (void)memcpy(frame.data, data, frame.dlc);
@@ -587,7 +589,7 @@ bool AimStm32CanCore::pollRx() {
   return true;
 }
 
-bool AimStm32CanCore::transmit(const Frame& frame) {
+bool AimStm32CanCore::transmit(const aim::Frame& frame) {
   AIM_ASSERT(frame.dlc <= 8U);
 
   if (!_initialized) {
@@ -607,7 +609,7 @@ bool AimStm32CanCore::transmit(const Frame& frame) {
   return flushTxMailboxes();
 }
 
-bool AimStm32CanCore::receive(Frame& frame) {
+bool AimStm32CanCore::receive(aim::Frame& frame) {
   AIM_ASSERT(_canbus != nullptr);
 
   if (!_initialized) {

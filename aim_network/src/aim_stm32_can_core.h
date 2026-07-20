@@ -1,7 +1,8 @@
 #ifndef AIM_STM32_CAN_CORE_H
 #define AIM_STM32_CAN_CORE_H
 
-#include "aim_network.h"
+#include "aim_can_frame.h"
+#include "aim_catalog.h"
 #include "aim_safety.h"
 
 #if defined(ARDUINO_ARCH_STM32)
@@ -36,7 +37,6 @@
 #endif
 #include <cstddef>
 #include <cstdint>
-#include "aim_can_frame.h"
 
 #if defined(CAN1)
 #define AIM_STM32_DEFAULT_CANBUS CAN1
@@ -46,8 +46,6 @@
 
 class AimStm32CanCore {
 public:
-  using Frame = aim::Frame;
-
   struct Stats {
     uint32_t txFrames;
     uint32_t rxFrames;
@@ -70,8 +68,8 @@ public:
   bool setClassMask(uint16_t mask);
 
   bool begin();
-  bool transmit(const Frame& frame);
-  bool receive(Frame& frame);
+  bool transmit(const aim::Frame& frame);
+  bool receive(aim::Frame& frame);
 
   void getStats(Stats& stats) const;
   void clearStats();
@@ -86,9 +84,9 @@ private:
   static constexpr uint8_t kRxQueueSize = 16U;
   static constexpr uint8_t kMaxRxPollIterations = 8U;
 
-  bool enqueueTx(const Frame& frame);
-  bool dequeueRx(Frame& frame);
-  bool pushRx(const Frame& frame);
+  bool enqueueTx(const aim::Frame& frame);
+  bool dequeueRx(aim::Frame& frame);
+  bool pushRx(const aim::Frame& frame);
   bool flushTxMailboxes();
   bool pollRx();
   bool configureFilter();
@@ -103,12 +101,12 @@ private:
   CAN_TypeDef* _canbus;
   bool _initialized;
 
-  Frame _txQueue[kTxQueueSize];
+  aim::Frame _txQueue[kTxQueueSize];
   uint8_t _txHead;
   uint8_t _txTail;
   uint8_t _txCount;
 
-  Frame _rxQueue[kRxQueueSize];
+  aim::Frame _rxQueue[kRxQueueSize];
   uint8_t _rxHead;
   uint8_t _rxTail;
   uint8_t _rxCount;

@@ -1,8 +1,7 @@
-// AIM Network v0.6.x minimal example — STM32 publisher + time master.
+// AIM Network v0.7.0 minimal example — STM32 publisher + time master.
 // Sends a fake altitude ramp at 10 Hz and a TIME sync at 1 Hz, heartbeats via
 // service(), and logs heartbeats received from other nodes.
 
-#include <aim_can_driver.h>
 #include <aim_network.h>
 #include <aim_job.h>
 #include <logger.h>
@@ -16,7 +15,7 @@ static aim::Job g_tick1000{1000U, 0U};
 static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
 
 static Logger g_log(Serial, static_cast<uint8_t>(aim::Source::Ucm), LogLevel::INFO);
-static AimCanDriver g_canHw(kCanBaud, CAN1);
+static AimCanHardware g_canHw(kCanBaud, CAN1);
 static AimNetwork g_aim(&g_canHw, aim::Source::Ucm);
 
 void setup(void) {

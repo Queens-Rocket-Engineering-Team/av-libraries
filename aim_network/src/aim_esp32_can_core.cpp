@@ -1,4 +1,5 @@
 #include "aim_esp32_can_core.h"
+#include "aim_network.h"
 
 #if defined(ARDUINO_ARCH_ESP32)
 
@@ -194,7 +195,7 @@ bool AimEsp32CanCore::recoverBusOff() {
   return begin();
 }
 
-bool AimEsp32CanCore::transmit(const Frame& frame) {
+bool AimEsp32CanCore::transmit(const aim::Frame& frame) {
   AIM_ASSERT(frame.dlc <= 8U);
 
   if (!_initialized) {
@@ -261,7 +262,7 @@ bool AimEsp32CanCore::shouldAcceptId(const uint32_t id) const {
   return (src != 0U) && ((_classMask & (1U << cls)) != 0U);
 }
 
-bool AimEsp32CanCore::receive(Frame& frame) {
+bool AimEsp32CanCore::receive(aim::Frame& frame) {
   AIM_ASSERT(_classMask != 0U);
 
   if (!_initialized) {
