@@ -49,40 +49,35 @@ static constexpr uint8_t Av204     = 0x03;  // UCM, Vent valve
 static constexpr uint8_t PwrPtUcm  = 0x05;
 static constexpr uint8_t PwrSolLcm = 0x06;
 static constexpr uint8_t PwrPtLcm  = 0x07;
-// Sensors (value = i32, scaling fixed here)
-static constexpr uint8_t Pt204        = 0x10;  // LCM, PSI x100
-static constexpr uint8_t Pt202        = 0x11;  // UCM, PSI x100
-static constexpr uint8_t Acceleration = 0x12;  // Altimeter, m/s^2 x100
-static constexpr uint8_t Velocity     = 0x13;  // Altimeter, m/s x100
-static constexpr uint8_t TcLowerValve = 0x15;  // LCM, Celsius x100
-static constexpr uint8_t Altitude     = 0x18;  // meters x100
-static constexpr uint8_t GpsPosition  = 0x19;  // Fused GPS Position (lat: b[0..3], lon: b[4..7])
+// Sensors (wire value = i32 fixed-point)
+static constexpr uint8_t Pt204        = 0x10;  // LCM, PSI (x100)
+static constexpr uint8_t Pt202        = 0x11;  // UCM, PSI (x100)
+static constexpr uint8_t Acceleration = 0x12;  // Altimeter, m/s^2 (x100)
+static constexpr uint8_t TcLowerValve = 0x15;  // LCM, Celsius (x100)
+static constexpr uint8_t Altitude     = 0x18;  // meters (x100)
+static constexpr uint8_t GpsPosition  = 0x19;  // lat: b[0..3], lon: b[4..7] (1e-7 deg)
 static constexpr uint8_t BattVolt     = 0x20;  // mV
 static constexpr uint8_t GpsNumSats   = 0x21;  // count
 static constexpr uint8_t Volt24Ucm    = 0x32;  // mV
-static constexpr uint8_t VoltSolLcm   = 0x33;  // mV                                              //
+static constexpr uint8_t VoltSolLcm   = 0x33;  // mV
 // Events
-static constexpr uint8_t LowPower         = 0x40;  // detail: 0=exit 1=enter
-static constexpr uint8_t LaunchDetect     = 0x41;  // detail: 1=detected
-static constexpr uint8_t SafeStateEntered = 0x42;  // detail: reason code
+static constexpr uint8_t LowPower          = 0x40;  // detail: 0=exit 1=enter
+static constexpr uint8_t LaunchDetect      = 0x41;  // detail: 1=detected
+static constexpr uint8_t GroundPowerStatus = 0x42;  // detail: 1=conected
+static constexpr uint8_t SafeStateEntered  = 0x43;  // detail: reason code
+static constexpr uint8_t TelemetryMode     = 0x44;  // detail: 0=Idle (1 Hz), 1=Active (100 Hz)
 // Time
 static constexpr uint8_t TimeSync = 0x50;
 }  // namespace subject
 
-// --- Payload enums (bytes 4–7, layouts per class in the protocol doc) ---
+// --- Payload enums ---
 
-enum class ControlState : uint8_t {
-  Closed  = 0,
-  Open    = 1,
-  Unknown = 2,  // controls without feedback/sensing report Unknown
-  Fault   = 3,
-};
-
-enum class AckResult : uint8_t {
-  Accepted            = 0,
-  RejectSafeState     = 1,
-  RejectBadSubject    = 2,
-  RejectBadStateValue = 3,
+enum class FlightPhase : uint8_t {
+  Preflight = 0,
+  Boost     = 1,
+  Coast     = 2,
+  Decent    = 3,
+  Landed    = 4,
 };
 
 enum class NodeState : uint8_t {

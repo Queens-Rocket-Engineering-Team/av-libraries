@@ -118,6 +118,7 @@ Sent at Event priority class (`0x0`); repeat 3× at 100 ms spacing on state chan
 | 0x40 | LowPower | Power | 0=exit, 1=enter |
 | 0x41 | LaunchDetect | Power | 1=detected |
 | 0x42 | SafeStateEntered | any | reason code |
+| 0x44 | TelemetryMode | UCM / QLCP | 0=Idle (1 Hz), 1=Active (100 Hz) |
 
 ### Time / Heartbeat
 

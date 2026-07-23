@@ -60,6 +60,16 @@ struct Msg {
   void setSensorValue(int32_t v) {
     (void)memcpy(b, &v, sizeof(v));
   }
+
+  void setGpsPosition(int32_t &lon, int32_t &lat) {
+    (void)memcpy(b, &lon, sizeof(lon));
+    (void)memcpy(b + sizeof(lon), &lat, sizeof(lat));
+  }
+
+  void getGpsPosition(int32_t &lon, int32_t &lat) {
+    (void)memcpy(&lon, b, sizeof(lon));
+    (void)memcpy(&lat, b + sizeof(lon), sizeof(lat));
+  }
 };
 
 static inline uint32_t encodeId(Class cls, uint8_t subj, Source src) {
