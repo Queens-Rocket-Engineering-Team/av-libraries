@@ -52,7 +52,7 @@ static constexpr uint8_t PwrPtLcm  = 0x07;
 // Sensors (wire value = i32 fixed-point)
 static constexpr uint8_t Pt204        = 0x10;  // LCM, PSI (x100)
 static constexpr uint8_t Pt202        = 0x11;  // UCM, PSI (x100)
-static constexpr uint8_t Acceleration = 0x12;  // Altimeter, m/s^2 (x100)
+static constexpr uint8_t Acceleration = 0x12;  // Altimeter, mm/s²  (= m/s² × 1000; 1G = 9810)
 static constexpr uint8_t TcLowerValve = 0x15;  // LCM, Celsius (x100)
 static constexpr uint8_t Altitude     = 0x18;  // meters (x100)
 static constexpr uint8_t GpsPosition  = 0x19;  // lat: b[0..3], lon: b[4..7] (1e-7 deg)

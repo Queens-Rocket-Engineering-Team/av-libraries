@@ -66,7 +66,7 @@ struct Msg {
     (void)memcpy(b + sizeof(lon), &lat, sizeof(lat));
   }
 
-  void getGpsPosition(int32_t &lon, int32_t &lat) {
+  void getGpsPosition(int32_t &lon, int32_t &lat) const {
     (void)memcpy(&lon, b, sizeof(lon));
     (void)memcpy(&lat, b + sizeof(lon), sizeof(lat));
   }
