@@ -53,9 +53,11 @@ static constexpr uint8_t PwrPtLcm  = 0x07;
 static constexpr uint8_t Pt204        = 0x10;  // LCM, PSI (x100)
 static constexpr uint8_t Pt202        = 0x11;  // UCM, PSI (x100)
 static constexpr uint8_t Acceleration = 0x12;  // Altimeter, mm/s²  (= m/s² × 1000; 1G = 9810)
+static constexpr uint8_t PtSpare1     = 0x13;  // UCM, spare ADC channel, PSI (x100)
+static constexpr uint8_t PtSpare2     = 0x14;  // LCM, spare ADC channel, PSI (x100)
 static constexpr uint8_t TcLowerValve = 0x15;  // LCM, Celsius (x100)
 static constexpr uint8_t Altitude     = 0x18;  // meters (x100)
-static constexpr uint8_t GpsPosition  = 0x19;  // lat: b[0..3], lon: b[4..7] (1e-7 deg)
+static constexpr uint8_t GpsPosition  = 0x19;  // lon: b[0..3], lat: b[4..7] (1e-7 deg)
 static constexpr uint8_t BattVolt     = 0x20;  // mV
 static constexpr uint8_t GpsNumSats   = 0x21;  // count
 static constexpr uint8_t Volt24Ucm    = 0x32;  // mV

@@ -149,12 +149,13 @@ public:
   // backward at midnight — never use it for scheduling or liveness timing.
   uint32_t syncedMillis() const;
 
-private:
+  // Disciplines the local clock offset relative to remote master time (ms).
   void syncTime(uint32_t remoteMillis);
 
+private:
   AimCanHardware* _hw;
   aim::Source _self;
-  int32_t _timeOffset;
+  volatile int32_t _timeOffset;
   uint32_t _lastTxMs;
   uint32_t _lastSyncTimeMs;
 };
