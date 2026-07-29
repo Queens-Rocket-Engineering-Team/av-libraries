@@ -32,7 +32,7 @@ class AimFlightRecorder {
    * @brief Reclaims flash space if free space is critically low at boot.
    *
    * Must be called once after AimFileSystem::begin() and before the first
-   * writeRow(). Deletes log.bak and/or log.bin as needed to ensure at least
+   * writeRow(). 
    * kBootMinFreeBytes are available. Safe to call on a fresh filesystem.
    * @return true if storage is usable (even if no reclamation was needed).
    */
@@ -41,10 +41,13 @@ class AimFlightRecorder {
   /**
    * @brief Writes a compressed row of telemetry to the flash.
    *
-   * On write failure, attempts one forced rotation to reclaim space and
-   * retries exactly once. If the retry also fails the recorder latches
-   * disabled and all subsequent calls return false immediately. Worst-case
-   * per-call cost: one LFS rotation (bounded metadata ops), << 2s watchdog.
+   * 
+   * If log file has reached capacity, the recorder latches disabled, file is closed, and 
+   * all subsequent calls return false immediately. 
+   * On write failure, retries exactly once. 
+   * If the retry fails the recorder latches disabled
+   * and all subsequent calls return false immediately. 
+   * Worst-case per-call cost: bounded LFS metadata ops, << 2s watchdog.
    * @param rowData Array of unsigned 32-bit values to log.
    * @return true if written successfully.
    */
@@ -153,9 +156,7 @@ class AimFlightRecorder {
 
   void   encodeRaw31(uint8_t* buf, uint32_t val);
   void   encodeRaw32(uint8_t* buf, uint32_t val);
-  // Closes log.bin, rotates it to log.bak, opens a fresh log.bin.
-  // Used by both size-triggered and failure-triggered rotation paths.
-  bool   _rotate();
+
   // RDES-encodes rowData into buf. Returns byte count written.
   // Updates _lastVals, _rdesInitialized, _rowsSinceRaw.
   size_t _encodeRow(uint8_t* buf, const uint32_t* rowData);

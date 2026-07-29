@@ -43,7 +43,6 @@ bool AimFlightRecorder::begin() {
   if (freeBytes < kBootMinFreeBytes) {
     const uint32_t prevFree = freeBytes;
     lfs_t* lfs = _fs.getLfs();
-    lfs_remove(lfs, "/log.bak");
     const uint32_t used2  = _fs.getUsedSize();
     const uint32_t free2  = (used2 >= total) ? 0U : (total - used2);
     if (free2 < kBootMinFreeBytes) {
@@ -51,26 +50,6 @@ bool AimFlightRecorder::begin() {
     }
     LOG_WARN("Flight recorder: reclaimed space at boot (was %uB free)", prevFree);
   }
-  return true;
-}
-
-bool AimFlightRecorder::_rotate() {
-  lfs_t* lfs = _fs.getLfs();
-  if (_logFileOpen) {
-    lfs_file_close(lfs, &_logFile);
-    _logFileOpen = false;
-  }
-  lfs_remove(lfs, "/log.bak");   // LFS_ERR_NOENT on first rotation is not an error
-  lfs_rename(lfs, kLogPath, "/log.bak");
-  const int err = lfs_file_open(lfs, &_logFile, kLogPath,
-                                LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND);
-  if (err != LFS_ERR_OK) {
-    return false;
-  }
-  _logFileOpen    = true;
-  _rdesInitialized = false;
-  _rowsSinceRaw   = 0;
-  _syncCounter    = 0;
   return true;
 }
 
@@ -164,27 +143,25 @@ bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
     _logFileOpen = true;
   }
 
-  // Size-triggered rotation.
+  // update: Size-triggered disable & log error
   const lfs_soff_t fileSize = lfs_file_size(lfs, &_logFile);
   if (fileSize > 0 && static_cast<uint32_t>(fileSize) > _maxLogSize) {
-    if (!_rotate()) {
-      _disabled = true;
-      LOG_ERROR("Flight recorder disabled: rotation failed");
-      return false;
+    _disabled = true;
+    if (_logFileOpen) {
+      lfs_file_close(lfs, &_logFile); 
+      _logFileOpen = false; 
     }
+
+    LOG_ERROR("Flight recorder disabled: storage full (%u bytes)", static_cast<unsigned int>(fileSize));
+    return false; 
   }
 
   uint8_t buffer[80];  // 5 bytes × 16 cols max
   size_t ptr = _encodeRow(buffer, rowData);
 
-  // Write with NOSPC recovery: one forced rotation + one retry.
-  // Worst-case cost: one rotation (bounded LFS metadata ops), << 2s watchdog.
+  // Write with NOSPC recovery: one retry.
+  // Worst-case per-call cost: bounded LFS metadata ops, << 2s watchdog.
   lfs_ssize_t written = lfs_file_write(lfs, &_logFile, buffer, ptr);
-  if (written != static_cast<lfs_ssize_t>(ptr)) {
-    if (_rotate()) {
-      ptr     = _encodeRow(buffer, rowData);
-      written = lfs_file_write(lfs, &_logFile, buffer, ptr);
-    }
     if (written != static_cast<lfs_ssize_t>(ptr)) {
       if (_logFileOpen) {
         lfs_file_close(lfs, &_logFile);
@@ -194,12 +171,12 @@ bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
       LOG_ERROR("Flight recorder disabled: storage full/unwritable");
       return false;
     }
-  }
 
   if (++_syncCounter >= 16) {
     lfs_file_sync(lfs, &_logFile);
     _syncCounter = 0;
   }
+
   return true;
 }
 
