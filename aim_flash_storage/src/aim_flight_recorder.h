@@ -114,6 +114,28 @@ class AimFlightRecorder {
     return static_cast<uint32_t>(val);
   }
 
+  /**
+   * @brief Supported data types and bit-widths used for telemtry optimization.
+   */ 
+  enum class AimDataType : uint8_t {
+    UINT8 = 1, 
+    INT8 = 2, 
+    UINT16 = 3,
+    INT16 = 4,
+    UINT32 = 5, 
+    INT32 = 6,
+    FLOAT32 = 7
+  }; 
+
+ /**
+   * @brief Definition schema for an individual telemtry column, mapping name to data type. 
+   */ 
+  enum class AimDataType : uint8_t {
+  struct AimColumnDef {
+    const char* name; 
+    AimDataType type; 
+  }
+
  private:
   AimFileSystem&     _fs;
   const char* const* _headers;   // points to static strings; not owned
