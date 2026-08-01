@@ -22,10 +22,9 @@ class AimFlightRecorder {
   static constexpr uint8_t kHandshakeHeader = 32U;  // per-header field width in handshake
   static constexpr uint16_t kDumpBlockSize  = 512U; // dump block/chunk size on the wire
 
-  // headers: pointer to static string array (not copied). Must remain valid
-  // for the lifetime of the recorder.
+  // [UPDATE] - headers: pointer to column schema mapping of supported data types to column names
   AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
-                    uint32_t maxLogSize, const char* const* headers = nullptr);
+                    uint32_t maxLogSize, const AimColumnDef* headers = nullptr);
   ~AimFlightRecorder();
 
   /**
@@ -137,7 +136,7 @@ class AimFlightRecorder {
 
  private:
   AimFileSystem&     _fs;
-  const char* const* _headers;   // points to static strings; not owned
+  const AimColumnDef* _columns;   // [UPDATE] - points to column structure
 
   uint8_t  _numCols;
   uint16_t _originRefreshInt;

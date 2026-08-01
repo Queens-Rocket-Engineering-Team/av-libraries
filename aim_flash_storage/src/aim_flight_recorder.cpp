@@ -6,9 +6,9 @@
 const char* AimFlightRecorder::kLogPath = "/log.bin";
 
 AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
-                                     uint32_t maxLogSize, const char* const* headers)
+                                     uint32_t maxLogSize, const AimColumnDef* columns)
     : _fs(fs),
-      _headers(headers),
+      _columns(columns),
       _numCols(numCols > MAX_COLUMNS ? MAX_COLUMNS : numCols),
       _originRefreshInt(originRefreshInt),
       _maxLogSize(maxLogSize),
@@ -204,7 +204,7 @@ bool AimFlightRecorder::startDump(Stream* stream, const char* boardName) {
 
   // Self-describing handshake:
   //   '#' + blockSize(2LE) + numBlocks(2LE) + totalBytes(4LE)
-  //   + boardName[32] + numCols(1) + headers[numCols][32]
+  //   + boardName[32] + numCols(1) + (columnName[32] + dataType[1]) * numCols
   char nameBuf[kHandshakeName];
   memset(nameBuf, 0, sizeof(nameBuf));
   if (boardName) { strncpy(nameBuf, boardName, sizeof(nameBuf) - 1U); }
@@ -220,10 +220,14 @@ bool AimFlightRecorder::startDump(Stream* stream, const char* boardName) {
   char hdrBuf[kHandshakeHeader];
   for (uint8_t i = 0U; i < _numCols; ++i) {
     memset(hdrBuf, 0, sizeof(hdrBuf));
-    if (_headers && _headers[i]) {
-      strncpy(hdrBuf, _headers[i], sizeof(hdrBuf) - 1U);
+    if (_columns && _columns[i].name) {
+      strncpy(hdrBuf, _columns[i].name, sizeof(hdrBuf) - 1U);
     }
-    _dumpStream->write(reinterpret_cast<const uint8_t*>(hdrBuf), kHandshakeHeader);
+    _dumpStream->write(reinterpret_cast<const uint8_t*>(hdrBuf), kHandshakeHeader); // write 32-byte col name 
+
+    // write 1-byte data type enum specifier 
+    uint8_t typeByte = _columns ? static_cast<uint8_t>(_columns[i].type) : static_cast<uint8_t>(AimDataType::UINT32); 
+    _dumpStream->write(&typeByte, 1); 
   }
 
   return true;
