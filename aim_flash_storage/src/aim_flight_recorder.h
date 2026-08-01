@@ -130,11 +130,10 @@ class AimFlightRecorder {
  /**
    * @brief Definition schema for an individual telemtry column, mapping name to data type. 
    */ 
-  enum class AimDataType : uint8_t {
   struct AimColumnDef {
     const char* name; 
     AimDataType type; 
-  }
+  };
 
  private:
   AimFileSystem&     _fs;
