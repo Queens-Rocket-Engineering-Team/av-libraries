@@ -174,8 +174,10 @@ class AimFlightRecorder {
   static constexpr uint8_t  kRdesLvl3Prefix  = 0xC0U;    // bit prefix 110x
   static constexpr uint8_t  kRdesRaw32Prefix = 0xE0U;    // bit prefix 111
 
-  void   encodeRaw31(uint8_t* buf, uint32_t val);
-  void   encodeRaw32(uint8_t* buf, uint32_t val);
+  void   encodeRaw16(uint8_t* buf, uint32_t in);
+  void   encodeRaw31(uint8_t* buf, uint32_t in);
+  void   encodeRaw32(uint8_t* buf, uint32_t in);
+
 
   // RDES-encodes rowData into buf. Returns byte count written.
   // Updates _lastVals, _rdesInitialized, _rowsSinceRaw.

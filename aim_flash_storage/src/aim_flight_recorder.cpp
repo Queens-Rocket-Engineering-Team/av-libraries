@@ -59,39 +59,93 @@ size_t AimFlightRecorder::_encodeRow(uint8_t* buf, const uint32_t* rowData) {
 
   if (!_rdesInitialized || refreshOrigin) {
     for (uint8_t col = 0; col < _numCols; col++) {
+
       _lastVals[col] = rowData[col];
-      if (rowData[col] & 0x80000000U) {
-        encodeRaw32(&buf[ptr], rowData[col]);
-        ptr += 5;
-      } else {
-        encodeRaw31(&buf[ptr], rowData[col]);
-        ptr += 4;
-      }
+
+      // [UPDATE] - check data type to choose best packing (smaller types -> pack into fewer bytes)
+      // instead of treating everything as 32
+    AimDataType type = _columns ? _columns[col].type : AimDataType::UINT32; // fall back to a default uint32
+
+    switch(type) {
+      case AimDataType::UINT8:
+      case AimDataType::INT8:
+          buf[ptr] = static_cast<uint8_t>(rowData[col]); 
+          ptr+=1;
+          break; 
+
+      case AimDataType::UINT16:
+      case AimDataType::INT16:
+          encodeRaw16(&buf[ptr], rowData[col]); 
+          ptr+=2; 
+          break;
+
+      case AimDataType::UINT32:
+      case AimDataType::INT32:
+      case AimDataType::FLOAT32:
+      default:
+        if (rowData[col] & 0x80000000U) {
+          encodeRaw32(&buf[ptr], rowData[col]);
+          ptr += 5;
+        } else {
+          encodeRaw31(&buf[ptr], rowData[col]);
+          ptr += 4;
+        }
+        break; 
+    }
     }
     _rowsSinceRaw    = 0;
     _rdesInitialized = true;
-  } else {
+  } 
+  
+  else {
     for (uint8_t col = 0; col < _numCols; col++) {
-      const uint32_t lastVal = _lastVals[col];
-      const uint32_t curVal  = rowData[col];
-      const bool signAdd     = (curVal >= lastVal);
-      const uint32_t offset  = signAdd ? (curVal - lastVal) : (lastVal - curVal);
+      // [UPDATE] - trigger RDES only on 32-bit 
+      // code is a bit redundant right now
 
-      if (offset <= LVL_2_MAX) {
-        buf[ptr++] = kRdesLvl2Prefix | (signAdd ? 0x20U : 0U) | (static_cast<uint8_t>(offset >> 8) & 0x1FU);
-        buf[ptr++] = static_cast<uint8_t>(offset);
-      } else if (offset <= LVL_3_MAX) {
-        buf[ptr++] = kRdesLvl3Prefix | (signAdd ? 0x10U : 0U) | (static_cast<uint8_t>(offset >> 16) & 0x0FU);
-        buf[ptr++] = static_cast<uint8_t>(offset >> 8);
-        buf[ptr++] = static_cast<uint8_t>(offset);
-      } else if (curVal <= 0x7FFFFFFFU) {
-        encodeRaw31(&buf[ptr], curVal);
-        ptr += 4;
-      } else {
-        encodeRaw32(&buf[ptr], curVal);
-        ptr += 5;
+      AimDataType type = _columns ? _columns[col].type : AimDataType::UINT32; 
+
+      switch (type) {
+        case AimDataType::UINT8:
+        case AimDataType::INT8:
+          buf[ptr] = static_cast<uint8_t>(rowData[col]); 
+          ptr += 1; 
+           _lastVals[col] = rowData[col];
+          break; 
+
+        case AimDataType::UINT16:
+        case AimDataType::INT16: 
+          encodeRaw16(&buf[ptr], rowData[col]); 
+          ptr += 2; 
+           _lastVals[col] = rowData[col];
+          break;
+
+        case AimDataType::UINT32:
+        case AimDataType::INT32:
+        case AimDataType::FLOAT32:
+        default: {
+          const uint32_t lastVal = _lastVals[col];
+          const uint32_t curVal  = rowData[col];
+          const bool signAdd     = (curVal >= lastVal);
+          const uint32_t offset  = signAdd ? (curVal - lastVal) : (lastVal - curVal);
+
+          if (offset <= LVL_2_MAX) {
+            buf[ptr++] = kRdesLvl2Prefix | (signAdd ? 0x20U : 0U) | (static_cast<uint8_t>(offset >> 8) & 0x1FU);
+            buf[ptr++] = static_cast<uint8_t>(offset);
+          } else if (offset <= LVL_3_MAX) {
+            buf[ptr++] = kRdesLvl3Prefix | (signAdd ? 0x10U : 0U) | (static_cast<uint8_t>(offset >> 16) & 0x0FU);
+            buf[ptr++] = static_cast<uint8_t>(offset >> 8);
+            buf[ptr++] = static_cast<uint8_t>(offset);
+          } else if (curVal <= 0x7FFFFFFFU) {
+            encodeRaw31(&buf[ptr], curVal);
+            ptr += 4;
+          } else {
+            encodeRaw32(&buf[ptr], curVal);
+            ptr += 5;
+          }
+          _lastVals[col] = curVal;
+          break;
+        }
       }
-      _lastVals[col] = curVal;
     }
     _rowsSinceRaw++;
   }
@@ -112,6 +166,11 @@ bool AimFlightRecorder::closeLog() {
 bool AimFlightRecorder::syncLog() {
   if (!_fs.isReady() || !_logFileOpen) return false;
   return lfs_file_sync(_fs.getLfs(), &_logFile) == LFS_ERR_OK;
+}
+
+void AimFlightRecorder::encodeRaw16(uint8_t* buf, uint32_t in) {
+  buf[0] = static_cast<uint8_t>(in >> 8); 
+  buf[1] = static_cast<uint8_t>(in);
 }
 
 void AimFlightRecorder::encodeRaw31(uint8_t* buf, uint32_t in) {
