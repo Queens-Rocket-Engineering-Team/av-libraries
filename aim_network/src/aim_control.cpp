@@ -127,7 +127,9 @@ void controlServiceTx(Control& c, uint32_t nowMs, AimNetwork& aim) {
   cmd.cls     = Class::Cmd;
   cmd.subject = c.subject;
   cmd.b[0]    = c.seq;
-  cmd.b[1]    = c.desiredOpen ? static_cast<uint8_t>(ControlState::Open) : static_cast<uint8_t>(ControlState::Closed);
+  cmd.b[1]    = c.desiredOpen ?
+      static_cast<uint8_t>(ControlState::Open)
+      : static_cast<uint8_t>(ControlState::Closed);
   if (aim.send(cmd)) {
     c.dirty      = false;
     c.lastSentMs = nowMs;
@@ -138,7 +140,9 @@ void controlBuildState(const Control& c, aim::Msg& out) {
   out         = aim::Msg{};
   out.cls     = Class::State;
   out.subject = c.subject;
-  out.b[0]    = c.state ? static_cast<uint8_t>(ControlState::Open) : static_cast<uint8_t>(ControlState::Closed);
+  out.b[0]    = c.state ?
+                  static_cast<uint8_t>(ControlState::Open)
+                  : static_cast<uint8_t>(ControlState::Closed);
   out.b[1]    = c.energized ? 1U : 0U;
   out.b[2]    = static_cast<uint8_t>(c.hall);
 }

@@ -3,17 +3,15 @@
 
 #if defined(ARDUINO_ARCH_ESP32)
 
-#include "aim_network.h"
+#include "aim_can_frame.h"
+#include "aim_catalog.h"
 #include "aim_safety.h"
 
-#include "aim_can_frame.h"
 #include <driver/twai.h>
 #include <cstdint>
 
 class AimEsp32CanCore {
 public:
-  using Frame = aim::Frame;
-
   struct Stats {
     uint32_t txFrames;
     uint32_t rxFrames;
@@ -35,8 +33,8 @@ public:
   bool setClassMask(uint16_t mask);
 
   bool begin();
-  bool transmit(const Frame& frame);
-  bool receive(Frame& frame);
+  bool transmit(const aim::Frame& frame);
+  bool receive(aim::Frame& frame);
 
   void getStats(Stats& stats) const;
   void clearStats();
