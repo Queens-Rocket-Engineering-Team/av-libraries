@@ -6,9 +6,9 @@
 const char* AimFlightRecorder::kLogPath = "/log.bin";
 
 AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
-                                     uint32_t maxLogSize, const AimColumnDef* columns)
+                                     uint32_t maxLogSize, const char* const* headers)
     : _fs(fs),
-      _columns(columns),
+      _headers(headers),
       _numCols(numCols > MAX_COLUMNS ? MAX_COLUMNS : numCols),
       _originRefreshInt(originRefreshInt),
       _maxLogSize(maxLogSize),
@@ -26,6 +26,8 @@ AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_
       _dumpLastPos(0),
       _savedLogMask(0) {
   memset(_lastVals, 0, sizeof(_lastVals));
+  _activeLogIndex = 1;
+  _activeLogPath[0] = '\0';
 }
 
 AimFlightRecorder::~AimFlightRecorder() {
@@ -36,121 +38,40 @@ AimFlightRecorder::~AimFlightRecorder() {
 bool AimFlightRecorder::begin() {
   if (!_fs.isReady()) return false;
 
-  const uint32_t total = _fs.getTotalSize();
-  const uint32_t used  = _fs.getUsedSize();
-  const uint32_t freeBytes = (used >= total) ? 0U : (total - used);
+  lfs_t* lfs = _fs.getLfs();
+  lfs_dir_t dir;
+  uint16_t maxIdx = 0;
 
-  if (freeBytes < kBootMinFreeBytes) {
-    const uint32_t prevFree = freeBytes;
-    lfs_t* lfs = _fs.getLfs();
-    const uint32_t used2  = _fs.getUsedSize();
-    const uint32_t free2  = (used2 >= total) ? 0U : (total - used2);
-    if (free2 < kBootMinFreeBytes) {
-      lfs_remove(lfs, kLogPath);
+  if (lfs_dir_open(lfs, &dir, "/") == LFS_ERR_OK) {
+    lfs_info info;
+    while (lfs_dir_read(lfs, &dir, &info) > 0) {
+      if (info.type == LFS_TYPE_REG) {
+        uint16_t idx = 0;
+        if (sscanf(info.name, "log_%03hu.bin", &idx) == 1) {
+          if (idx > maxIdx) maxIdx = idx;
+        }
+      }
     }
-    LOG_WARN("Flight recorder: reclaimed space at boot (was %uB free)", prevFree);
+    lfs_dir_close(lfs, &dir);
   }
+  _activeLogIndex = maxIdx + 1;
+  snprintf(_activeLogPath, sizeof(_activeLogPath), "/log_%03u.bin", _activeLogIndex);
+
   return true;
 }
 
 size_t AimFlightRecorder::_encodeRow(uint8_t* buf, const uint32_t* rowData) {
-  size_t ptr = 0;
-  const bool refreshOrigin = (_originRefreshInt > 0) && (_rowsSinceRaw >= _originRefreshInt);
-
-  if (!_rdesInitialized || refreshOrigin) {
-    for (uint8_t col = 0; col < _numCols; col++) {
-
-      _lastVals[col] = rowData[col];
-
-      // [UPDATE] - check data type to choose best packing (smaller types -> pack into fewer bytes)
-      // instead of treating everything as 32
-    AimDataType type = _columns ? _columns[col].type : AimDataType::UINT32; // fall back to a default uint32
-
-    switch(type) {
-      case AimDataType::UINT8:
-      case AimDataType::INT8:
-          buf[ptr] = static_cast<uint8_t>(rowData[col]); 
-          ptr+=1;
-          break; 
-
-      case AimDataType::UINT16:
-      case AimDataType::INT16:
-          encodeRaw16(&buf[ptr], rowData[col]); 
-          ptr+=2; 
-          break;
-
-      case AimDataType::UINT32:
-      case AimDataType::INT32:
-      case AimDataType::FLOAT32:
-      default:
-        if (rowData[col] & 0x80000000U) {
-          encodeRaw32(&buf[ptr], rowData[col]);
-          ptr += 5;
-        } else {
-          encodeRaw31(&buf[ptr], rowData[col]);
-          ptr += 4;
-        }
-        break; 
-    }
-    }
-    _rowsSinceRaw    = 0;
+  const bool forceOrigin = (!_rdesInitialized) || (_originRefreshInt > 0 && _rowsSinceRaw >= _originRefreshInt);
+  size_t bytesWritten = rdes_encode_row_inline(buf, rowData, _lastVals, _numCols, forceOrigin);
+  if (forceOrigin) {
+    _rowsSinceRaw = 0;
     _rdesInitialized = true;
-  } 
-  
-  else {
-    for (uint8_t col = 0; col < _numCols; col++) {
-      // [UPDATE] - trigger RDES only on 32-bit 
-      // code is a bit redundant right now
-
-      AimDataType type = _columns ? _columns[col].type : AimDataType::UINT32; 
-
-      switch (type) {
-        case AimDataType::UINT8:
-        case AimDataType::INT8:
-          buf[ptr] = static_cast<uint8_t>(rowData[col]); 
-          ptr += 1; 
-           _lastVals[col] = rowData[col];
-          break; 
-
-        case AimDataType::UINT16:
-        case AimDataType::INT16: 
-          encodeRaw16(&buf[ptr], rowData[col]); 
-          ptr += 2; 
-           _lastVals[col] = rowData[col];
-          break;
-
-        case AimDataType::UINT32:
-        case AimDataType::INT32:
-        case AimDataType::FLOAT32:
-        default: {
-          const uint32_t lastVal = _lastVals[col];
-          const uint32_t curVal  = rowData[col];
-          const bool signAdd     = (curVal >= lastVal);
-          const uint32_t offset  = signAdd ? (curVal - lastVal) : (lastVal - curVal);
-
-          if (offset <= LVL_2_MAX) {
-            buf[ptr++] = kRdesLvl2Prefix | (signAdd ? 0x20U : 0U) | (static_cast<uint8_t>(offset >> 8) & 0x1FU);
-            buf[ptr++] = static_cast<uint8_t>(offset);
-          } else if (offset <= LVL_3_MAX) {
-            buf[ptr++] = kRdesLvl3Prefix | (signAdd ? 0x10U : 0U) | (static_cast<uint8_t>(offset >> 16) & 0x0FU);
-            buf[ptr++] = static_cast<uint8_t>(offset >> 8);
-            buf[ptr++] = static_cast<uint8_t>(offset);
-          } else if (curVal <= 0x7FFFFFFFU) {
-            encodeRaw31(&buf[ptr], curVal);
-            ptr += 4;
-          } else {
-            encodeRaw32(&buf[ptr], curVal);
-            ptr += 5;
-          }
-          _lastVals[col] = curVal;
-          break;
-        }
-      }
-    }
+  } else {
     _rowsSinceRaw++;
   }
-  return ptr;
+  return bytesWritten;
 }
+
 
 bool AimFlightRecorder::closeLog() {
   if (!_logFileOpen) return true;
@@ -168,25 +89,7 @@ bool AimFlightRecorder::syncLog() {
   return lfs_file_sync(_fs.getLfs(), &_logFile) == LFS_ERR_OK;
 }
 
-void AimFlightRecorder::encodeRaw16(uint8_t* buf, uint32_t in) {
-  buf[0] = static_cast<uint8_t>(in >> 8); 
-  buf[1] = static_cast<uint8_t>(in);
-}
 
-void AimFlightRecorder::encodeRaw31(uint8_t* buf, uint32_t in) {
-  buf[0] = static_cast<uint8_t>(0b01111111U & (in >> 24));
-  buf[1] = static_cast<uint8_t>(in >> 16);
-  buf[2] = static_cast<uint8_t>(in >> 8);
-  buf[3] = static_cast<uint8_t>(in);
-}
-
-void AimFlightRecorder::encodeRaw32(uint8_t* buf, uint32_t in) {
-  buf[0] = kRdesRaw32Prefix;
-  buf[1] = static_cast<uint8_t>(in >> 24);
-  buf[2] = static_cast<uint8_t>(in >> 16);
-  buf[3] = static_cast<uint8_t>(in >> 8);
-  buf[4] = static_cast<uint8_t>(in);
-}
 
 bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
   if (_disabled) return false;
@@ -195,7 +98,7 @@ bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
   lfs_t* lfs = _fs.getLfs();
 
   if (!_logFileOpen) {
-    if (lfs_file_open(lfs, &_logFile, kLogPath,
+    if (lfs_file_open(lfs, &_logFile, _activeLogPath,
                       LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND) != LFS_ERR_OK) {
       return false;
     }
@@ -204,7 +107,11 @@ bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
 
   // update: Size-triggered disable & log error
   const lfs_soff_t fileSize = lfs_file_size(lfs, &_logFile);
-  if (fileSize > 0 && static_cast<uint32_t>(fileSize) > _maxLogSize) {
+  uint32_t effectiveMax = _maxLogSize;
+  if (effectiveMax == 0) {
+    effectiveMax = _fs.getTotalSize() > 65536U ? _fs.getTotalSize() - 65536U : 0;
+  }
+  if (fileSize > 0 && static_cast<uint32_t>(fileSize) > effectiveMax) {
     _disabled = true;
     if (_logFileOpen) {
       lfs_file_close(lfs, &_logFile); 
@@ -279,14 +186,83 @@ bool AimFlightRecorder::startDump(Stream* stream, const char* boardName) {
   char hdrBuf[kHandshakeHeader];
   for (uint8_t i = 0U; i < _numCols; ++i) {
     memset(hdrBuf, 0, sizeof(hdrBuf));
-    if (_columns && _columns[i].name) {
-      strncpy(hdrBuf, _columns[i].name, sizeof(hdrBuf) - 1U);
+    if (_headers && _headers[i]) {
+      strncpy(hdrBuf, _headers[i], sizeof(hdrBuf) - 1U);
     }
     _dumpStream->write(reinterpret_cast<const uint8_t*>(hdrBuf), kHandshakeHeader); // write 32-byte col name 
+  }
 
-    // write 1-byte data type enum specifier 
-    uint8_t typeByte = _columns ? static_cast<uint8_t>(_columns[i].type) : static_cast<uint8_t>(AimDataType::UINT32); 
-    _dumpStream->write(&typeByte, 1); 
+  return true;
+}
+
+bool AimFlightRecorder::startDumpLatest(Stream* stream, const char* boardName) {
+  if (!_fs.isReady() || _dumping || !stream) return false;
+  if (_logFileOpen) syncLog();
+
+  lfs_t* lfs = _fs.getLfs();
+  lfs_dir_t dir;
+  uint16_t maxIdx = 0;
+  bool found = false;
+
+  if (lfs_dir_open(lfs, &dir, "/") == LFS_ERR_OK) {
+    lfs_info info;
+    while (lfs_dir_read(lfs, &dir, &info) > 0) {
+      if (info.type == LFS_TYPE_REG) {
+        uint16_t idx = 0;
+        if (sscanf(info.name, "log_%03hu.bin", &idx) == 1) {
+          if (!found || idx > maxIdx) {
+            maxIdx = idx;
+            found = true;
+          }
+        }
+      }
+    }
+    lfs_dir_close(lfs, &dir);
+  }
+
+  char targetPath[32];
+  if (found) {
+    snprintf(targetPath, sizeof(targetPath), "/log_%03u.bin", maxIdx);
+  } else if (_activeLogPath[0] != '\0') {
+    strncpy(targetPath, _activeLogPath, sizeof(targetPath));
+  } else {
+    return false;
+  }
+
+  if (lfs_file_open(lfs, &_dumpFile, targetPath, LFS_O_RDONLY) != LFS_ERR_OK) return false;
+
+  _dumpTotalBytes          = static_cast<uint32_t>(lfs_file_size(lfs, &_dumpFile));
+  _dumpNumBlocks           = static_cast<uint16_t>((_dumpTotalBytes + kDumpBlockSize - 1) / kDumpBlockSize);
+  _dumpCurrentBlock        = 0;
+  _dumpCurrentBlockOffset  = 0;
+  _dumpLastPos             = 0;
+  _dumpStream              = stream;
+  _dumping                 = true;
+
+  if (g_logger != nullptr) {
+    _savedLogMask = g_logger->filterMask();
+    g_logger->setFilterMask(0U);
+  }
+
+  char nameBuf[kHandshakeName];
+  memset(nameBuf, 0, sizeof(nameBuf));
+  if (boardName) { strncpy(nameBuf, boardName, sizeof(nameBuf) - 1U); }
+
+  const uint16_t blockSize = kDumpBlockSize;
+  _dumpStream->write(kDumpStartChar);
+  _dumpStream->write(reinterpret_cast<const uint8_t*>(&blockSize),       2);
+  _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpNumBlocks),  2);
+  _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpTotalBytes), 4);
+  _dumpStream->write(reinterpret_cast<const uint8_t*>(nameBuf), kHandshakeName);
+  _dumpStream->write(_numCols);
+
+  char hdrBuf[kHandshakeHeader];
+  for (uint8_t i = 0U; i < _numCols; ++i) {
+    memset(hdrBuf, 0, sizeof(hdrBuf));
+    if (_headers && _headers[i]) {
+      strncpy(hdrBuf, _headers[i], sizeof(hdrBuf) - 1U);
+    }
+    _dumpStream->write(reinterpret_cast<const uint8_t*>(hdrBuf), kHandshakeHeader);
   }
 
   return true;

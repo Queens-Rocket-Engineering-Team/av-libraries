@@ -24,7 +24,8 @@ static uint32_t s_rowCounter = 0U;
 
 static void handleStatus(Stream& out) {
   out.printf("uptime=%lu ms  rows=%lu\r\n",
-             static_cast<unsigned long>(millis()), s_rowCounter);
+             static_cast<unsigned long>(millis()),
+             static_cast<unsigned long>(s_rowCounter));
 }
 
 static const AimConsoleHook kHooks[] = {

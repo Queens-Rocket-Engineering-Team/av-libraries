@@ -15,7 +15,10 @@ import sys
 import time
 import datetime
 import csv
-from rdes import RDESDecompressor
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../aim_rdes/python"))
+from rdes_ctypes import RDESDecompressorCTypes
 
 BAUD_RATE    = 115200
 DEFAULT_PORT = "/dev/ttyUSB0"
@@ -77,7 +80,9 @@ def retrieve_board_flash(device):
 
     print(f"Board : {board_name}")
     print(f"Schema: {num_cols} cols — {headers}")
-    print(f"Size  : {total_bytes}B ({num_blocks} blocks of {block_size}B)")
+    capacity = num_blocks * block_size
+    pct_used = (total_bytes / capacity) * 100 if capacity > 0 else 0
+    print(f"Size  : {total_bytes}B / {capacity}B ({pct_used:.1f}% used) [{num_blocks} blocks of {block_size}B]")
 
     # Block loop
     raw_payload = bytearray()
@@ -127,7 +132,7 @@ def main():
 
     raw, name, cols, headers = retrieve_board_flash(device)
     print(f"Decompressing ({cols} columns)...")
-    decomp = RDESDecompressor(numCols=cols)
+    decomp = RDESDecompressorCTypes(numCols=cols)
     data   = decomp.decompress(raw)
     write_csv(name, data, headers)
 

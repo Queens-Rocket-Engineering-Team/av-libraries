@@ -4,26 +4,7 @@
 #include <Arduino.h>
 #include "aim_file_system.h"
 
- /**
-   * @brief Supported data types and bit-widths used for telemtry optimization.
-   */ 
-  enum class AimDataType : uint8_t {
-    UINT8 = 1, 
-    INT8 = 2, 
-    UINT16 = 3,
-    INT16 = 4,
-    UINT32 = 5, 
-    INT32 = 6,
-    FLOAT32 = 7
-  }; 
-
- /**
-   * @brief Definition schema for an individual telemtry column, mapping name to data type. 
-   */ 
-  struct AimColumnDef {
-    const char* name; 
-    AimDataType type; 
-  };
+#include <rdes.h>
 
 /**
  * @brief High-speed telemetry recorder using RDES compression.
@@ -45,7 +26,7 @@ class AimFlightRecorder {
 
   // [UPDATE] - headers: pointer to column schema mapping of supported data types to column names
   AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
-                    uint32_t maxLogSize, const AimColumnDef* headers = nullptr);
+                    uint32_t maxLogSize = 0, const char* const* headers = nullptr);
   ~AimFlightRecorder();
 
   /**
@@ -111,6 +92,11 @@ class AimFlightRecorder {
   bool startDump(Stream* stream, const char* boardName);
 
   /**
+   * @brief Opens the latest log file for reading and starts a streaming dump.
+   */
+  bool startDumpLatest(Stream* stream, const char* boardName);
+
+  /**
    * @brief Services a chunk of the active dump. Must be called periodically.
    * @param maxBytes Maximum number of raw bytes to process in this tick.
    * @return true if the dump is still in progress, false if finished or failed.
@@ -136,7 +122,7 @@ class AimFlightRecorder {
 
  private:
   AimFileSystem&     _fs;
-  const AimColumnDef* _columns;   // [UPDATE] - points to column structure
+  const char* const* _headers;   // [UPDATE] - points to column names
 
   uint8_t  _numCols;
   uint16_t _originRefreshInt;
@@ -162,10 +148,10 @@ class AimFlightRecorder {
   lfs_soff_t  _dumpLastPos;
   uint8_t     _savedLogMask;
 
-  static const char* kLogPath;
+  char     _activeLogPath[32];
+  uint16_t _activeLogIndex;
 
-  // Minimum free bytes required before begin() considers storage healthy.
-  static constexpr uint32_t kBootMinFreeBytes = 64U * 1024U;
+  static const char* kLogPath;
 
   // RDES implementation constants
   static constexpr uint16_t LVL_2_MAX        = 8191U;    // 2^13 - 1
