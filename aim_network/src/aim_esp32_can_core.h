@@ -4,8 +4,6 @@
 #if defined(ARDUINO_ARCH_ESP32)
 
 #include "aim_can_frame.h"
-#include "aim_catalog.h"
-#include "aim_safety.h"
 
 #include <driver/twai.h>
 #include <cstdint>
@@ -13,17 +11,17 @@
 class AimEsp32CanCore {
 public:
   struct Stats {
-    uint32_t txFrames;
-    uint32_t rxFrames;
-    uint32_t txErrors;
-    uint32_t rxErrors;
-    uint32_t filteredFrames;
-    uint32_t beginErrors;
-    uint32_t busOffRecoveries;
-    uint32_t lastError;
-    uint32_t lastBusErrCount;
-    uint32_t lastTec;
-    uint32_t lastRec;
+    uint32_t txFrames{0U};
+    uint32_t rxFrames{0U};
+    uint32_t txErrors{0U};
+    uint32_t rxErrors{0U};
+    uint32_t filteredFrames{0U};
+    uint32_t beginErrors{0U};
+    uint32_t busOffRecoveries{0U};
+    uint32_t lastError{0U};
+    uint32_t lastBusErrCount{0U};
+    uint32_t lastTec{0U};
+    uint32_t lastRec{0U};
   };
 
   AimEsp32CanCore(uint32_t baud, int rxPin, int txPin);
