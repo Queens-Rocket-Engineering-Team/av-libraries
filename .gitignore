@@ -5,5 +5,12 @@
 aim_flash_storage/extract_tool/*.csv
 
 #vscode config
-*.vscode__pycache__/
+*.vscode
+__pycache__/
 *.pyc
+
+# Local build / LSP artifacts
+compile_commands.json
+.clangd
+*.dll
+
