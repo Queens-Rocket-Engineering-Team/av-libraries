@@ -2,8 +2,7 @@
 #define AIM_STM32_CAN_CORE_H
 
 #include "aim_can_frame.h"
-#include "aim_catalog.h"
-#include "aim_safety.h"
+#include "aim_queue.h"
 
 #if defined(ARDUINO_ARCH_STM32)
 
@@ -35,7 +34,6 @@
 #else
 #error "Unsupported STM32 HAL family for AimStm32CanCore"
 #endif
-#include <cstddef>
 #include <cstdint>
 
 #if defined(CAN1)
@@ -47,17 +45,17 @@
 class AimStm32CanCore {
 public:
   struct Stats {
-    uint32_t txFrames;
-    uint32_t rxFrames;
-    uint32_t txQueueDrops;
-    uint32_t rxQueueDrops;
-    uint32_t txHalErrors;
-    uint32_t rxHalErrors;
-    uint32_t busOffEvents;
-    uint32_t errorWarningEvents;
-    uint32_t errorPassiveEvents;
-    uint32_t lastHalError;
-    uint32_t lastEsr;
+    uint32_t txFrames{0U};
+    uint32_t rxFrames{0U};
+    uint32_t txQueueDrops{0U};
+    uint32_t rxQueueDrops{0U};
+    uint32_t txHalErrors{0U};
+    uint32_t rxHalErrors{0U};
+    uint32_t busOffEvents{0U};
+    uint32_t errorWarningEvents{0U};
+    uint32_t errorPassiveEvents{0U};
+    uint32_t lastHalError{0U};
+    uint32_t lastEsr{0U};
   };
 
   AimStm32CanCore(uint32_t baud,
@@ -84,9 +82,6 @@ private:
   static constexpr uint8_t kRxQueueSize = 16U;
   static constexpr uint8_t kMaxRxPollIterations = 8U;
 
-  bool enqueueTx(const aim::Frame& frame);
-  bool dequeueRx(aim::Frame& frame);
-  bool pushRx(const aim::Frame& frame);
   bool flushTxMailboxes();
   bool pollRx();
   bool configureFilter();
@@ -101,15 +96,8 @@ private:
   CAN_TypeDef* _canbus;
   bool _initialized;
 
-  aim::Frame _txQueue[kTxQueueSize];
-  uint8_t _txHead;
-  uint8_t _txTail;
-  uint8_t _txCount;
-
-  aim::Frame _rxQueue[kRxQueueSize];
-  uint8_t _rxHead;
-  uint8_t _rxTail;
-  uint8_t _rxCount;
+  AimQueue<aim::Frame, kTxQueueSize> _txQueue;
+  AimQueue<aim::Frame, kRxQueueSize> _rxQueue;
 
   Stats _stats;
   uint32_t _lastErrorFlags;
