@@ -26,7 +26,7 @@
 
 namespace aim {
 
-static constexpr char kNetworkVersionString[] = "0.7.0";
+static constexpr char kNetworkVersionString[] = "0.7.1";
 static constexpr uint32_t kHeartbeatTxIntervalMs = 1000U;
 
 // --- CAN ID layout ---
