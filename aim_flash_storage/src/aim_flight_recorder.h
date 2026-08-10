@@ -24,30 +24,25 @@ class AimFlightRecorder {
   static constexpr uint8_t kHandshakeHeader = 32U;  // per-header field width in handshake
   static constexpr uint16_t kDumpBlockSize  = 512U; // dump block/chunk size on the wire
 
-  // [UPDATE] - headers: pointer to column schema mapping of supported data types to column names
+  // Headers: pointer to column schema mapping of supported data types to column names
   AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
                     uint32_t maxLogSize = 0, const char* const* headers = nullptr);
   ~AimFlightRecorder();
 
   /**
-   * @brief Reclaims flash space if free space is critically low at boot.
+   * @brief Initializes the flight recorder and locates active log file.
    *
-   * Must be called once after AimFileSystem::begin() and before the first
-   * writeRow(). 
-   * kBootMinFreeBytes are available. Safe to call on a fresh filesystem.
-   * @return true if storage is usable (even if no reclamation was needed).
+   * Must be called once after AimFileSystem::begin() and before the first writeRow().
+   * @return true if storage is usable.
    */
   bool begin();
 
   /**
    * @brief Writes a compressed row of telemetry to the flash.
    *
-   * 
    * If log file has reached capacity, the recorder latches disabled, file is closed, and 
    * all subsequent calls return false immediately. 
-   * On write failure, retries exactly once. 
-   * If the retry fails the recorder latches disabled
-   * and all subsequent calls return false immediately. 
+   * On write failure, the recorder latches disabled and all subsequent calls return false immediately.
    * Worst-case per-call cost: bounded LFS metadata ops, << 2s watchdog.
    * @param rowData Array of unsigned 32-bit values to log.
    * @return true if written successfully.
@@ -97,6 +92,17 @@ class AimFlightRecorder {
   bool startDumpLatest(Stream* stream, const char* boardName);
 
   /**
+   * @brief Opens a specific log file by index number for reading and starts a dump.
+   */
+  bool startDumpIndex(Stream* stream, const char* boardName, uint16_t index);
+
+  /**
+   * @brief Scans LittleFS and lists all flight log files and their sizes to stream.
+   * @return Number of flight log files found.
+   */
+  uint16_t listLogs(Stream* stream);
+
+  /**
    * @brief Services a chunk of the active dump. Must be called periodically.
    * @param maxBytes Maximum number of raw bytes to process in this tick.
    * @return true if the dump is still in progress, false if finished or failed.
@@ -122,7 +128,7 @@ class AimFlightRecorder {
 
  private:
   AimFileSystem&     _fs;
-  const char* const* _headers;   // [UPDATE] - points to column names
+  const char* const* _headers;
 
   uint8_t  _numCols;
   uint16_t _originRefreshInt;
@@ -148,26 +154,13 @@ class AimFlightRecorder {
   lfs_soff_t  _dumpLastPos;
   uint8_t     _savedLogMask;
 
-  char     _activeLogPath[32];
-  uint16_t _activeLogIndex;
-
-  static const char* kLogPath;
-
-  // RDES implementation constants
-  static constexpr uint16_t LVL_2_MAX        = 8191U;    // 2^13 - 1
-  static constexpr uint32_t LVL_3_MAX        = 1048575UL; // 2^20 - 1
-  static constexpr uint8_t  kRdesLvl2Prefix  = 0x80U;    // bit prefix 10x
-  static constexpr uint8_t  kRdesLvl3Prefix  = 0xC0U;    // bit prefix 110x
-  static constexpr uint8_t  kRdesRaw32Prefix = 0xE0U;    // bit prefix 111
-
-  void   encodeRaw16(uint8_t* buf, uint32_t in);
-  void   encodeRaw31(uint8_t* buf, uint32_t in);
-  void   encodeRaw32(uint8_t* buf, uint32_t in);
-
+  char _activeLogPath[32];
 
   // RDES-encodes rowData into buf. Returns byte count written.
   // Updates _lastVals, _rdesInitialized, _rowsSinceRaw.
   size_t _encodeRow(uint8_t* buf, const uint32_t* rowData);
+
+  bool startDumpFile(Stream* stream, const char* boardName, const char* path);
 };
 
 #endif // AIM_FLIGHT_RECORDER_H

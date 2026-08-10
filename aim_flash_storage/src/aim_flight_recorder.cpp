@@ -3,8 +3,6 @@
 #include <string.h>
 #include <algorithm>
 
-const char* AimFlightRecorder::kLogPath = "/log.bin";
-
 AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
                                      uint32_t maxLogSize, const char* const* headers)
     : _fs(fs),
@@ -26,7 +24,6 @@ AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_
       _dumpLastPos(0),
       _savedLogMask(0) {
   memset(_lastVals, 0, sizeof(_lastVals));
-  _activeLogIndex = 1;
   _activeLogPath[0] = '\0';
 }
 
@@ -54,8 +51,8 @@ bool AimFlightRecorder::begin() {
     }
     lfs_dir_close(lfs, &dir);
   }
-  _activeLogIndex = maxIdx + 1;
-  snprintf(_activeLogPath, sizeof(_activeLogPath), "/log_%03u.bin", _activeLogIndex);
+  const uint16_t activeLogIndex = maxIdx + 1;
+  snprintf(_activeLogPath, sizeof(_activeLogPath), "/log_%03u.bin", activeLogIndex);
 
   return true;
 }
@@ -105,7 +102,9 @@ bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
     _logFileOpen = true;
   }
 
-  // update: Size-triggered disable & log error
+  // Enforce storage boundary cap. If _maxLogSize is 0 (unspecified), reserve a mandatory
+  // 64 KB headroom margin so LittleFS can update directory metadata, superblocks, and
+  // lookahead buffers without hitting underlying NOR flash allocation errors.
   const lfs_soff_t fileSize = lfs_file_size(lfs, &_logFile);
   uint32_t effectiveMax = _maxLogSize;
   if (effectiveMax == 0) {
@@ -125,18 +124,17 @@ bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
   uint8_t buffer[80];  // 5 bytes × 16 cols max
   size_t ptr = _encodeRow(buffer, rowData);
 
-  // Write with NOSPC recovery: one retry.
-  // Worst-case per-call cost: bounded LFS metadata ops, << 2s watchdog.
+  // Write compressed row to LittleFS file.
   lfs_ssize_t written = lfs_file_write(lfs, &_logFile, buffer, ptr);
-    if (written != static_cast<lfs_ssize_t>(ptr)) {
-      if (_logFileOpen) {
-        lfs_file_close(lfs, &_logFile);
-        _logFileOpen = false;
-      }
-      _disabled = true;
-      LOG_ERROR("Flight recorder disabled: storage full/unwritable");
-      return false;
+  if (written != static_cast<lfs_ssize_t>(ptr)) {
+    if (_logFileOpen) {
+      lfs_file_close(lfs, &_logFile);
+      _logFileOpen = false;
     }
+    _disabled = true;
+    LOG_ERROR("Flight recorder disabled: storage full/unwritable");
+    return false;
+  }
 
   if (++_syncCounter >= 16) {
     lfs_file_sync(lfs, &_logFile);
@@ -147,58 +145,10 @@ bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
 }
 
 bool AimFlightRecorder::startDump(Stream* stream, const char* boardName) {
-  if (!_fs.isReady() || _dumping || !stream) return false;
-  if (_logFileOpen) syncLog();
-
-  lfs_t* lfs = _fs.getLfs();
-  if (lfs_file_open(lfs, &_dumpFile, kLogPath, LFS_O_RDONLY) != LFS_ERR_OK) return false;
-
-  _dumpTotalBytes          = static_cast<uint32_t>(lfs_file_size(lfs, &_dumpFile));
-  _dumpNumBlocks           = static_cast<uint16_t>((_dumpTotalBytes + kDumpBlockSize - 1) / kDumpBlockSize);
-  _dumpCurrentBlock        = 0;
-  _dumpCurrentBlockOffset  = 0;
-  _dumpLastPos             = 0;
-  _dumpStream              = stream;
-  _dumping                 = true;
-
-  // Mute async logging before the handshake — a LOG_* line interleaved with
-  // the binary block stream corrupts it. Restored in stopDump().
-  if (g_logger != nullptr) {
-    _savedLogMask = g_logger->filterMask();
-    g_logger->setFilterMask(0U);
-  }
-
-  // Self-describing handshake:
-  //   '#' + blockSize(2LE) + numBlocks(2LE) + totalBytes(4LE)
-  //   + boardName[32] + numCols(1) + (columnName[32] + dataType[1]) * numCols
-  char nameBuf[kHandshakeName];
-  memset(nameBuf, 0, sizeof(nameBuf));
-  if (boardName) { strncpy(nameBuf, boardName, sizeof(nameBuf) - 1U); }
-
-  const uint16_t blockSize = kDumpBlockSize;  // addressable copy for the LE wire write
-  _dumpStream->write(kDumpStartChar);
-  _dumpStream->write(reinterpret_cast<const uint8_t*>(&blockSize),       2);
-  _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpNumBlocks),  2);
-  _dumpStream->write(reinterpret_cast<const uint8_t*>(&_dumpTotalBytes), 4);
-  _dumpStream->write(reinterpret_cast<const uint8_t*>(nameBuf), kHandshakeName);
-  _dumpStream->write(_numCols);
-
-  char hdrBuf[kHandshakeHeader];
-  for (uint8_t i = 0U; i < _numCols; ++i) {
-    memset(hdrBuf, 0, sizeof(hdrBuf));
-    if (_headers && _headers[i]) {
-      strncpy(hdrBuf, _headers[i], sizeof(hdrBuf) - 1U);
-    }
-    _dumpStream->write(reinterpret_cast<const uint8_t*>(hdrBuf), kHandshakeHeader); // write 32-byte col name 
-  }
-
-  return true;
+  return startDumpLatest(stream, boardName);
 }
 
 bool AimFlightRecorder::startDumpLatest(Stream* stream, const char* boardName) {
-  if (!_fs.isReady() || _dumping || !stream) return false;
-  if (_logFileOpen) syncLog();
-
   lfs_t* lfs = _fs.getLfs();
   lfs_dir_t dir;
   uint16_t maxIdx = 0;
@@ -229,7 +179,46 @@ bool AimFlightRecorder::startDumpLatest(Stream* stream, const char* boardName) {
     return false;
   }
 
-  if (lfs_file_open(lfs, &_dumpFile, targetPath, LFS_O_RDONLY) != LFS_ERR_OK) return false;
+  return startDumpFile(stream, boardName, targetPath);
+}
+
+bool AimFlightRecorder::startDumpIndex(Stream* stream, const char* boardName, uint16_t index) {
+  char targetPath[32];
+  snprintf(targetPath, sizeof(targetPath), "/log_%03u.bin", index);
+  return startDumpFile(stream, boardName, targetPath);
+}
+
+uint16_t AimFlightRecorder::listLogs(Stream* stream) {
+  if (!_fs.isReady() || !stream) return 0;
+  lfs_t* lfs = _fs.getLfs();
+  lfs_dir_t dir;
+  uint16_t count = 0;
+
+  if (lfs_dir_open(lfs, &dir, "/") == LFS_ERR_OK) {
+    lfs_info info;
+    while (lfs_dir_read(lfs, &dir, &info) > 0) {
+      if (info.type == LFS_TYPE_REG) {
+        uint16_t idx = 0;
+        if (sscanf(info.name, "log_%03hu.bin", &idx) == 1) {
+          stream->printf("  [%u] /%s (%u bytes)\r\n", idx, info.name, static_cast<unsigned>(info.size));
+          count++;
+        } else if (strcmp(info.name, "log.bin") == 0) {
+          stream->printf("  [legacy] /%s (%u bytes)\r\n", info.name, static_cast<unsigned>(info.size));
+          count++;
+        }
+      }
+    }
+    lfs_dir_close(lfs, &dir);
+  }
+  return count;
+}
+
+bool AimFlightRecorder::startDumpFile(Stream* stream, const char* boardName, const char* path) {
+  if (!_fs.isReady() || _dumping || !stream || !path) return false;
+  if (_logFileOpen) syncLog();
+
+  lfs_t* lfs = _fs.getLfs();
+  if (lfs_file_open(lfs, &_dumpFile, path, LFS_O_RDONLY) != LFS_ERR_OK) return false;
 
   _dumpTotalBytes          = static_cast<uint32_t>(lfs_file_size(lfs, &_dumpFile));
   _dumpNumBlocks           = static_cast<uint16_t>((_dumpTotalBytes + kDumpBlockSize - 1) / kDumpBlockSize);

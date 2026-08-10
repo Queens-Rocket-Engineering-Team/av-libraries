@@ -5,9 +5,8 @@
 #include "littlefs/lfs.h"
 #include <logger.h>
 
-/**
- * @brief Interface for hardware-specific flash storage drivers.
- */
+// Interface for hardware-specific flash storage drivers.
+// LittleFS requires uniform power-of-two block/sector geometry callbacks.
 class AimBlockDevice {
  public:
   virtual ~AimBlockDevice() {}
@@ -46,6 +45,7 @@ class ESP32PartitionDriver : public AimBlockDevice {
     return (esp_partition_erase_range(_partition, (size_t)block * c->block_size, c->block_size) == ESP_OK) ? 0 : LFS_ERR_IO;
   }
   int sync(const struct lfs_config* c) override { (void)c; return 0; }
+  // ESP32 SPI flash controller 16-byte word alignment requirement
   lfs_size_t read_size() const override { return 16; }
   lfs_size_t prog_size() const override { return 16; }
   lfs_size_t block_size() const override { return 4096; }
@@ -62,8 +62,15 @@ class ESP32PartitionDriver : public AimBlockDevice {
 #include <SPI.h>
 class SpiNorFlashDriver : public AimBlockDevice {
  public:
+  // JEDEC 4KB sector erase size (opcode 0x20). LittleFS blocks map 1:1 to sectors.
   static constexpr uint32_t kSectorSize = 4096U;
+
+  // JEDEC Page Program (opcode 0x02) limit. NOR flash chip internal buffer wraps 
+  // writes at 256B page boundaries; multi-byte writes across 256B boundaries MUST be chunked.
   static constexpr uint32_t kPageSize   = 256U;
+
+  // Maximum hardware busy timeout (Status Reg 1 WIP bit 0). Physical sector erase duration is ~400ms max. 
+  // 500ms bounds SPI hardware stalls while remaining well under 2s WDT limits.
   static constexpr uint32_t kWaitMs     = 500U;
 
   SpiNorFlashDriver(uint8_t csPin, SPIClass& spi)
@@ -75,7 +82,7 @@ class SpiNorFlashDriver : public AimBlockDevice {
     _spi.begin();
 
     uint8_t id[3];
-    _select(); _spi.transfer(0x9F);
+    _select(); _spi.transfer(0x9F); // Read JEDEC ID (Opcode 0x9F)
     id[0] = _spi.transfer(0); id[1] = _spi.transfer(0); id[2] = _spi.transfer(0);
     _deselect();
 
@@ -91,7 +98,7 @@ class SpiNorFlashDriver : public AimBlockDevice {
            lfs_off_t off, void* buf, lfs_size_t size) override {
     (void)c;
     uint32_t addr = block * kSectorSize + off;
-    _select(); _spi.transfer(0x03); _addr(addr);
+    _select(); _spi.transfer(0x03); _addr(addr); // Read Data (Opcode 0x03)
     uint8_t* p = static_cast<uint8_t*>(buf);
     for (lfs_size_t i = 0; i < size; ++i) p[i] = _spi.transfer(0);
     _deselect(); return 0;
@@ -107,7 +114,7 @@ class SpiNorFlashDriver : public AimBlockDevice {
       lfs_size_t chunk = kPageSize - (addr % kPageSize);
       if (chunk > rem) chunk = rem;
       _write_enable();
-      _select(); _spi.transfer(0x02); _addr(addr);
+      _select(); _spi.transfer(0x02); _addr(addr); // Page Program (Opcode 0x02)
       for (lfs_size_t i = 0; i < chunk; ++i) _spi.transfer(*p++);
       _deselect();
       if (!_wait()) return LFS_ERR_IO;
@@ -119,7 +126,7 @@ class SpiNorFlashDriver : public AimBlockDevice {
   int erase(const struct lfs_config* c, lfs_block_t block) override {
     (void)c;
     _write_enable();
-    _select(); _spi.transfer(0x20); _addr(block * kSectorSize); _deselect();
+    _select(); _spi.transfer(0x20); _addr(block * kSectorSize); _deselect(); // Sector Erase 4KB (Opcode 0x20)
     return _wait() ? 0 : LFS_ERR_IO;
   }
 
@@ -138,8 +145,8 @@ class SpiNorFlashDriver : public AimBlockDevice {
   SPIClass& _spi;
   uint32_t  _sectors;
 
-  void _select()   { digitalWrite(_cs, LOW); }
-  void _deselect() { digitalWrite(_cs, HIGH); }
+  void _select()   { _spi.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0)); digitalWrite(_cs, LOW); }
+  void _deselect() { digitalWrite(_cs, HIGH); _spi.endTransaction(); }
 
   void _addr(uint32_t a) {
     _spi.transfer((a >> 16) & 0xFF);
@@ -147,23 +154,23 @@ class SpiNorFlashDriver : public AimBlockDevice {
     _spi.transfer( a        & 0xFF);
   }
 
-  void _write_enable() { _select(); _spi.transfer(0x06); _deselect(); }
+  void _write_enable() { _select(); _spi.transfer(0x06); _deselect(); } // Write Enable WREN (Opcode 0x06)
 
   bool _wait() {
     uint32_t start = millis();
     do {
-      _select(); _spi.transfer(0x05);
+      _select(); _spi.transfer(0x05); // Read Status Reg 1 (Opcode 0x05)
       uint8_t s = _spi.transfer(0);
       _deselect();
-      if (!(s & 0x01)) return true;
+      if (!(s & 0x01)) return true; // Bit 0 WIP (Write In Progress) cleared
     } while ((uint32_t)(millis() - start) < kWaitMs);
     LOG_ERROR("SpiNorFlash: busy timeout"); return false;
   }
 };
 
-/**
- * @brief Core LittleFS filesystem manager.
- */
+// Core LittleFS filesystem manager and hardware block device adapter.
+// NOT THREAD-SAFE: All LittleFS operations are non-reentrant. Concurrent access 
+// from multiple FreeRTOS tasks MUST be synchronized externally.
 class AimFileSystem {
  public:
   explicit AimFileSystem(AimBlockDevice* device);
