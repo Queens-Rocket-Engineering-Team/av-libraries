@@ -21,7 +21,7 @@ extern "C" {
 // Core RDES3 settings
 #define RDES_LVL_1_MAX 31U
 #define RDES_LVL_2_MAX 4095U
-#define RDES_LVL_3_MAX 1048575UL
+#define RDES_LVL_3_MAX 983039UL // Prevents 0xFF header byte collision with RDES_RAW_32_PREFIX
 #define RDES_RAW_32_PREFIX 0xFFU
 
 /**
