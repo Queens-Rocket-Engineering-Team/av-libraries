@@ -1,75 +1,58 @@
 # aim_flash_storage
 
-High-reliability flash storage and telemetry recording library for QRET avionics modules.
-
-## Architecture
-
-The library is decomposed into a backend-agnostic filesystem, a telemetry
-recorder, and an optional debug console:
-
-1.  **AimFileSystem** (`aim_file_system.h`): Owns the LittleFS instance and talks
-    to a hardware driver — `ESP32PartitionDriver` (ESP32 internal-flash
-    partition) or `SpiNorFlashDriver` (external SPI NOR flash; auto-detects any
-    W25Q-compatible chip — e.g. W25Q128JV or BY25Q128ES — from its JEDEC ID).
-2.  **AimFlightRecorder** (`aim_flight_recorder.h`): High-speed telemetry logger
-    using RDES (Relative Delta Encoding System) compression, with watchdog-safe
-    chunked log rotation and a streaming serial dump.
-3.  **aim_console** (`aim_console.h`): Optional hook-based serial debug console.
-    The library owns the flash sub-menu (info / dump / erase); applications
-    register board-specific commands as a static `AimConsoleHook` array.
-
-Node identity and the telemetry schema are build-time constants — there is no
-runtime configuration store.
+High-reliability flash telemetry recording and serial extraction library for QRET avionics modules (STM32 & ESP32).
 
 ---
 
-## Flight Recorder & Datalogging
+## 3-Step Quick Start: Using Flash Effectively
 
-High-speed datalogging with space-efficient compression.
+### Step 1: Initialize Filesystem & Flight Recorder (Firmware Setup)
 
-### Logging Data
 ```cpp
 #include <aim_file_system.h>
 #include <aim_flight_recorder.h>
+#include <aim_console.h>
 
-static const char* const kHeaders[4] = {"Time", "P1", "P2", "State"};
+static const char* const kHeaders[4] = {"Time_ms", "Pressure_Pa", "AccelZ_mg", "State"};
 
-ESP32PartitionDriver g_hw("storage");      // or: SpiNorFlashDriver g_hw(csPin, spi);
-AimFileSystem        g_fs(&g_hw);
-AimFlightRecorder    g_recorder(g_fs, 4, 100, 1024 * 1024, kHeaders);
-                                  // 4 cols, 100-row origin refresh, 1 MB log cap
+// STM32 SPI NOR Flash Driver (or ESP32PartitionDriver g_hw("storage") for ESP32)
+SpiNorFlashDriver g_hw(pins::kFlashCs, SPI2);
+AimFileSystem     g_fs(&g_hw);
+AimFlightRecorder g_recorder(g_fs, 4, 100, 1024 * 1024, kHeaders);
 
 void setup() {
-    g_fs.begin();
-    g_recorder.begin();
-}
-
-void loop() {
-    uint32_t row[4] = { millis(), p1, p2, state };
-    g_recorder.writeRow(row);
+    Serial.begin(115200);
+    g_fs.begin();       // Mounts LittleFS (auto-formats blank flash on first boot)
+    g_recorder.begin(); // Opens active flight log (/flight/log_XXX.bin)
+    aimConsoleInit(Serial, g_fs, g_recorder, "Altimeter_Module", nullptr, 0);
 }
 ```
 
-### Retrieving Data (Extract Tool)
-The `extract_tool/` folder downloads and decompresses the flight log over
-serial. The firmware must be running `aim_console`.
+### Step 2: Log Telemetry Rows in Loop
 
-1.  Connect the board via USB-serial.
-2.  Install dependencies: `pip install pyserial`
-3.  Run the tool: `python extract_tool/main.py [port]` (default `/dev/ttyUSB0`)
+```cpp
+void loop() {
+    if (!aimConsoleIsActive()) {
+        uint32_t row[4] = { millis(), currentPressure, accelZ, flightState };
+        g_recorder.writeRow(row); // RDES-compresses & logs row (~20B/row)
+    }
+    aimConsoleService(); // Services serial extraction requests
+}
+```
 
-The tool enters the console, navigates the fixed flash-dump path (`d → f → 2`),
-reads the self-describing handshake (board name, column count, headers),
-downloads `log.bin`, decompresses the RDES stream, and writes a timestamped CSV.
+### Step 3: Extract Log to CSV Over Serial
+
+Run the Python extraction script on your ground PC:
+
+```powershell
+python av-libraries/aim_flash_storage/extract_tool/main.py COM3
+```
+*Navigates serial console menu (`q -> d -> f -> 2`), receives `#` handshake, downloads 512B blocks, and decompresses into `{board}_{log}_{timestamp}.csv`.*
 
 ---
 
-## Technical Standards & Safety
+## Essential Hardware Traps & Checkpoints
 
-- **Zero Dynamic Allocation**: No `malloc` or `new` in the logging or dump paths.
-- **Watchdog Safe**: Dumps and log rotation are chunked/non-blocking — each
-  `serviceDump()` tick processes a bounded byte budget.
-- **RDES Compression**: Efficiently encodes relative changes in sensor data to
-  maximize flash lifespan.
-- **No External Dependencies**: LittleFS is vendored; the SPI NOR driver speaks
-  the standard W25Q command set directly (no SerialFlash library).
+- **Serial Baud Rate**: Python tool defaults to **115,200 baud**. Ensure firmware `Serial.begin(115200)` matches (or use `--baud`).
+- **CS Pin High**: SPI Flash Chip Select (e.g. `PB12`) must be set `OUTPUT` and `HIGH` before `g_fs.begin()`.
+- **Watchdog Timeout**: Physical 4 KB sector erases take **40–100 ms**. Keep hardware watchdog $\ge 1.0\text{ s}$ to prevent resets.
