@@ -1,58 +1,72 @@
 # aim_flash_storage
 
-High-reliability flash telemetry recording and serial extraction library for QRET avionics modules (STM32 & ESP32).
+High-reliability flash telemetry recording, LittleFS storage management, and serial data extraction for QRET avionics modules (STM32 & ESP32).
 
 ---
 
-## 3-Step Quick Start: Using Flash Effectively
+## 1. Dependencies & Implementation Truth
 
-### Step 1: Initialize Filesystem & Flight Recorder (Firmware Setup)
+### Dependencies
+- **Firmware**: Requires [`aim_rdes`](../aim_rdes/README.md) (uses C API [`src/rdes.h`](../aim_rdes/src/rdes.h) for telemetry compression) and [`aim_logger`](../aim_logger). Uses vendored LittleFS (`src/littlefs/`).
+- **Ground Tool**: Requires `librdes.dll` (Windows) / `librdes.so` (Linux/macOS) compiled from [`aim_rdes/src/rdes.c`](../aim_rdes/src/rdes.c), and Python `pyserial`.
 
-```cpp
-#include <aim_file_system.h>
-#include <aim_flight_recorder.h>
-#include <aim_console.h>
-
-static const char* const kHeaders[4] = {"Time_ms", "Pressure_Pa", "AccelZ_mg", "State"};
-
-// STM32 SPI NOR Flash Driver (or ESP32PartitionDriver g_hw("storage") for ESP32)
-SpiNorFlashDriver g_hw(pins::kFlashCs, SPI2);
-AimFileSystem     g_fs(&g_hw);
-AimFlightRecorder g_recorder(g_fs, 4, 100, 1024 * 1024, kHeaders);
-
-void setup() {
-    Serial.begin(115200);
-    g_fs.begin();       // Mounts LittleFS (auto-formats blank flash on first boot)
-    g_recorder.begin(); // Opens active flight log (/flight/log_XXX.bin)
-    aimConsoleInit(Serial, g_fs, g_recorder, "Altimeter_Module", nullptr, 0);
-}
-```
-
-### Step 2: Log Telemetry Rows in Loop
-
-```cpp
-void loop() {
-    if (!aimConsoleIsActive()) {
-        uint32_t row[4] = { millis(), currentPressure, accelZ, flightState };
-        g_recorder.writeRow(row); // RDES-compresses & logs row (~20B/row)
-    }
-    aimConsoleService(); // Services serial extraction requests
-}
-```
-
-### Step 3: Extract Log to CSV Over Serial
-
-Run the Python extraction script on your ground PC:
-
-```powershell
-python av-libraries/aim_flash_storage/extract_tool/main.py COM3
-```
-*Navigates serial console menu (`q -> d -> f -> 2`), receives `#` handshake, downloads 512B blocks, and decompresses into `{board}_{log}_{timestamp}.csv`.*
+### Source of Implementation Truth (Working Projects)
+- **STM32 (SPI NOR Flash)**: [`examples/stm32_flash/src/main.cpp`](examples/stm32_flash/src/main.cpp) — Uses `SpiNorFlashDriver` over SPI2 (`PB12` CS).
+- **ESP32 (Internal Partition)**: [`examples/esp32_flash/src/main.cpp`](examples/esp32_flash/src/main.cpp) — Uses `ESP32PartitionDriver` with custom `partitions.csv`.
 
 ---
 
-## Essential Hardware Traps & Checkpoints
+## 2. End-to-End Operational Workflow
 
-- **Serial Baud Rate**: Python tool defaults to **115,200 baud**. Ensure firmware `Serial.begin(115200)` matches (or use `--baud`).
-- **CS Pin High**: SPI Flash Chip Select (e.g. `PB12`) must be set `OUTPUT` and `HIGH` before `g_fs.begin()`.
-- **Watchdog Timeout**: Physical 4 KB sector erases take **40–100 ms**. Keep hardware watchdog $\ge 1.0\text{ s}$ to prevent resets.
+1. **Build & Upload Firmware**:
+   ```bash
+   cd av-libraries/aim_flash_storage/examples/stm32_flash
+   pio run --target upload
+   ```
+
+2. **First-Boot Format & Manual Erase**:
+   - *First-Boot Format*: Brand-new flash chips with unformatted `0xFF` bytes auto-format LittleFS in ~500 ms on first boot.
+   - *Manual Console Wipe*: Connect serial monitor (`pio device monitor`), press `d` (debug console) $\rightarrow$ `f` (flash menu) $\rightarrow$ `3` (erase) $\rightarrow$ `1` (confirm).
+
+3. **High-Speed Telemetry Logging**:
+   Gate logging in `main.cpp` so telemetry pauses while debug console is active:
+   ```cpp
+   void loop() {
+     if (!aimConsoleIsActive()) {
+       uint32_t row[4] = { millis(), p_pa, a_z, state };
+       g_recorder.writeRow(row); // RDES-compresses & logs row to /flight/log_XXX.bin
+     }
+     aimConsoleService();
+   }
+   ```
+
+4. **Ground Extraction to CSV**:
+   Compile `librdes.dll` in `aim_rdes`, then run:
+   ```powershell
+   python av-libraries/aim_flash_storage/extract_tool/main.py COM3
+   ```
+   *Navigates `aim_console` (`q -> d -> f -> 2`), receives `#` binary handshake, streams 512B payload blocks, and decompresses into `{board}_{log}_{timestamp}.csv`.*
+
+---
+
+## 3. Console Architecture & Telemetry Gating (`aim_console`)
+
+`aim_console` ([`src/aim_console.h`](src/aim_console.h)) provides a non-blocking serial debug UI owned by the library.
+
+### Flash Menu Commands (`DBG > FLS`)
+- **`1` (Info)**: Prints ready status, total capacity, and used bytes.
+- **`2` (Dump)**: Streams binary dump of latest log file over serial. Mutes `LOG_*` printing to prevent byte corruption.
+- **`3` (Erase)**: Enters confirmation menu (`1` confirms erase/format).
+- **`4` (List)**: Lists all stored flight log files and sizes.
+- **`i` (Index)**: Expects raw index byte `N` to stream specific log `/flight/log_00N.bin`.
+
+### Telemetry Gating
+`aimConsoleIsActive()` returns `true` whenever an operator or ground script is inside a console menu. Telemetry logging **must** be gated with `if (!aimConsoleIsActive())` to prevent file lock contention during serial dumps or formatting.
+
+---
+
+## 4. Hardware Edge Cases
+
+- **Sector Erase Pauses**: SPI NOR 4 KB sector erases take **40–100 ms**. Keep hardware watchdog $\ge 1.0\text{ s}$.
+- **Baud Rate Mismatch**: Python ground tool defaults to **115,200 baud**. Match firmware `Serial.begin(115200)` or pass `--baud`.
+- **SPI CS Pin High**: Flash Chip Select (e.g. `PB12`) must be set `OUTPUT` and driven `HIGH` before `g_fs.begin()`.
