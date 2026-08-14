@@ -12,6 +12,7 @@
 #include "aim_catalog.h"
 #include "aim_can_frame.h"
 #include "aim_safety.h"
+#include "aim_job.h"
 
 // Conditional compilation mapping for the core hardware drivers.
 #if defined(ARDUINO_ARCH_STM32)
@@ -151,6 +152,9 @@ public:
 
   // Disciplines the local clock offset relative to remote master time (ms).
   void syncTime(uint32_t remoteMillis);
+
+  bool isHighDataRate() const { return aim::isHighDataRate(); }
+  void setHighDataRate(bool active);
 
 private:
   AimCanHardware* _hw;

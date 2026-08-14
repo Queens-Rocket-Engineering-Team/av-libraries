@@ -4,12 +4,9 @@
 #include <Arduino.h>
 #include "aim_file_system.h"
 
-/**
- * @brief High-speed telemetry recorder using RDES compression.
- * 
- * This class provides space-efficient sensor logging and watchdog-safe
- * asynchronous data dumping over a serial stream.
- */
+#include <rdes.h>
+
+// High-speed telemetry recorder using RDES compression over LittleFS.
 class AimFlightRecorder {
  public:
   static constexpr uint8_t MAX_COLUMNS = 16;
@@ -22,98 +19,60 @@ class AimFlightRecorder {
   static constexpr uint8_t kHandshakeHeader = 32U;  // per-header field width in handshake
   static constexpr uint16_t kDumpBlockSize  = 512U; // dump block/chunk size on the wire
 
-  // headers: pointer to static string array (not copied). Must remain valid
-  // for the lifetime of the recorder.
+  // Headers: pointer to column schema mapping of supported data types to column names.
   AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
-                    uint32_t maxLogSize, const char* const* headers = nullptr);
+                    uint32_t maxLogSize = 0, const char* const* headers = nullptr);
   ~AimFlightRecorder();
 
-  /**
-   * @brief Reclaims flash space if free space is critically low at boot.
-   *
-   * Must be called once after AimFileSystem::begin() and before the first
-   * writeRow(). Deletes log.bak and/or log.bin as needed to ensure at least
-   * kBootMinFreeBytes are available. Safe to call on a fresh filesystem.
-   * @return true if storage is usable (even if no reclamation was needed).
-   */
+  // Initializes the flight recorder and locates active log file. Must be called after AimFileSystem::begin().
   bool begin();
 
-  /**
-   * @brief Writes a compressed row of telemetry to the flash.
-   *
-   * On write failure, attempts one forced rotation to reclaim space and
-   * retries exactly once. If the retry also fails the recorder latches
-   * disabled and all subsequent calls return false immediately. Worst-case
-   * per-call cost: one LFS rotation (bounded metadata ops), << 2s watchdog.
-   * @param rowData Array of unsigned 32-bit values to log.
-   * @return true if written successfully.
-   */
+  // Writes a compressed row of telemetry to flash. Bounded LFS metadata cost (<< 2s watchdog).
   bool writeRow(uint32_t rowData[]);
 
-  /**
-   * @brief Forces a sync of the current log file to flash.
-   */
+  // Forces an immediate sync of the current log file to flash.
   bool syncLog();
 
-  /**
-   * @brief Syncs and closes the active log file handle.
-   *
-   * Must be called before AimFileSystem::format() — formatting while the
-   * handle is open leaves it stale and the next writeRow() trips a littlefs
-   * assert. Resets RDES state so the next writeRow() starts a fresh log with
-   * a raw origin row. Safe to call when no log file is open.
-   * @return true if closed cleanly (or nothing was open).
-   */
+  // Syncs and closes active log file handle. Must be called before AimFileSystem::format().
   bool closeLog();
 
-  /**
-   * @brief Checks if the log file handle is currently open.
-   */
+  // Checks if the log file handle is currently open.
   bool isLogging() const { return _logFileOpen; }
 
   // --- Watchdog-Safe Streaming Dump ---
 
-  /**
-   * @brief Opens the log file for reading and starts a streaming dump.
-   *
-   * Sends a self-describing handshake: '#' + blockSize(2) + numBlocks(2) +
-   * totalBytes(4) + boardName[32] + numCols(1) + headers[numCols][32].
-   * Mutes the global logger for the duration of the dump — an async LOG_*
-   * line interleaved with the binary block stream corrupts it (no checksums).
-   * stopDump() restores the previous log mask.
-   * @param stream    The serial stream to dump to.
-   * @param boardName Board identity string (null-padded to 32 bytes on wire).
-   * @return true if started successfully.
-   */
+  // Opens active log file for reading and starts serial block dump with self-describing handshake.
   bool startDump(Stream* stream, const char* boardName);
 
-  /**
-   * @brief Services a chunk of the active dump. Must be called periodically.
-   * @param maxBytes Maximum number of raw bytes to process in this tick.
-   * @return true if the dump is still in progress, false if finished or failed.
-   */
+  // Opens latest log file for reading and starts streaming dump over serial.
+  bool startDumpLatest(Stream* stream, const char* boardName);
+
+  // Opens a specific log file by index number (/log_XXX.bin) and starts serial dump.
+  bool startDumpIndex(Stream* stream, const char* boardName, uint16_t index);
+
+  // Scans LittleFS and lists all flight log files and byte sizes to stream.
+  uint16_t listLogs(Stream* stream);
+
+  // Deletes all flight log files (/log_*.bin) while preserving non-log configuration files.
+  uint16_t clearLogs();
+
+  // Services a chunk of active dump. Returns true while dump is in progress.
   bool serviceDump(size_t maxBytes);
 
-  /**
-   * @brief Aborts an active dump and closes the read handle.
-   */
+  // Aborts an active dump and closes read handle.
   void stopDump();
 
-  /**
-   * @brief Checks if a dump is currently active.
-   */
+  // Checks if a serial dump is currently active.
   bool isDumping() const { return _dumping; }
 
-  /**
-   * @brief Helper to convert signed values (like RSSI) to unsigned for RDES.
-   */
+  // Converts signed integers to unsigned bit patterns for RDES compression.
   static uint32_t unsignify(int32_t val) {
     return static_cast<uint32_t>(val);
   }
 
  private:
   AimFileSystem&     _fs;
-  const char* const* _headers;   // points to static strings; not owned
+  const char* const* _headers;
 
   uint8_t  _numCols;
   uint16_t _originRefreshInt;
@@ -139,26 +98,13 @@ class AimFlightRecorder {
   lfs_soff_t  _dumpLastPos;
   uint8_t     _savedLogMask;
 
-  static const char* kLogPath;
+  char _activeLogPath[32];
 
-  // Minimum free bytes required before begin() considers storage healthy.
-  static constexpr uint32_t kBootMinFreeBytes = 64U * 1024U;
-
-  // RDES implementation constants
-  static constexpr uint16_t LVL_2_MAX        = 8191U;    // 2^13 - 1
-  static constexpr uint32_t LVL_3_MAX        = 1048575UL; // 2^20 - 1
-  static constexpr uint8_t  kRdesLvl2Prefix  = 0x80U;    // bit prefix 10x
-  static constexpr uint8_t  kRdesLvl3Prefix  = 0xC0U;    // bit prefix 110x
-  static constexpr uint8_t  kRdesRaw32Prefix = 0xE0U;    // bit prefix 111
-
-  void   encodeRaw31(uint8_t* buf, uint32_t val);
-  void   encodeRaw32(uint8_t* buf, uint32_t val);
-  // Closes log.bin, rotates it to log.bak, opens a fresh log.bin.
-  // Used by both size-triggered and failure-triggered rotation paths.
-  bool   _rotate();
   // RDES-encodes rowData into buf. Returns byte count written.
   // Updates _lastVals, _rdesInitialized, _rowsSinceRaw.
   size_t _encodeRow(uint8_t* buf, const uint32_t* rowData);
+
+  bool startDumpFile(Stream* stream, const char* boardName, const char* path);
 };
 
 #endif // AIM_FLIGHT_RECORDER_H

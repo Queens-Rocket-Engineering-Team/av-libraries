@@ -1,6 +1,6 @@
 {
   "name": "aim_network",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Avionics Interconnected Module Network Library",
   "keywords": "can, avionics, network",
   "repository": {
