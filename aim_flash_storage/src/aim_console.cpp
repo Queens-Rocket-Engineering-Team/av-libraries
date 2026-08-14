@@ -31,7 +31,7 @@ static void printRootPrompt(void) {
 }
 
 static void printFlashPrompt(void) {
-  s_serial->printf("\r\nDBG > FLS [q:exit b:back] 1:inf 2:dmp 3:ers 4:lst  [%uB/%uB]\r\n",
+  s_serial->printf("\r\nDBG > FLS [q:exit b:back] 1:inf 2:dmp 3:ers 4:lst 5:clr  [%uB/%uB]\r\n",
                    static_cast<unsigned>(s_fs->getUsedSize()),
                    static_cast<unsigned>(s_fs->getTotalSize()));
 }
@@ -159,6 +159,10 @@ void aimConsoleService(void) {
         s_serial->print("Stored flight logs:\r\n");
         uint16_t count = s_recorder->listLogs(s_serial);
         s_serial->printf("%u log(s) found\r\n", count);
+        printFlashPrompt();
+      } else if (c == '5') {
+        uint16_t cleared = s_recorder->clearLogs();
+        s_serial->printf("[OK] cleared %u log(s)\r\n", cleared);
         printFlashPrompt();
       } else if (c == 'i') {
         int idx = aimConsoleWaitRead(*s_serial);

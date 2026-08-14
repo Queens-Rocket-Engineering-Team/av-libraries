@@ -1,4 +1,5 @@
 #include "aim_flight_recorder.h"
+#include "aim_console.h"
 #include <logger.h>
 #include <string.h>
 #include <algorithm>
@@ -90,6 +91,10 @@ bool AimFlightRecorder::syncLog() {
 
 bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
   if (_disabled) return false;
+#ifndef FLIGHT_BUILD
+  // Silently mute writes during interactive console sessions without reporting false I/O failures
+  if (aimConsoleIsActive()) return true;
+#endif
   if (!_fs.isReady() || !rowData || _numCols == 0) return false;
 
   lfs_t* lfs = _fs.getLfs();
@@ -190,6 +195,9 @@ bool AimFlightRecorder::startDumpIndex(Stream* stream, const char* boardName, ui
 
 uint16_t AimFlightRecorder::listLogs(Stream* stream) {
   if (!_fs.isReady() || !stream) return 0;
+  if (_logFileOpen) {
+    (void)syncLog();
+  }
   lfs_t* lfs = _fs.getLfs();
   lfs_dir_t dir;
   uint16_t count = 0;
@@ -211,6 +219,38 @@ uint16_t AimFlightRecorder::listLogs(Stream* stream) {
     lfs_dir_close(lfs, &dir);
   }
   return count;
+}
+
+uint16_t AimFlightRecorder::clearLogs() {
+  if (!_fs.isReady()) return 0;
+  if (_logFileOpen) {
+    (void)closeLog();
+  }
+  lfs_t* lfs = _fs.getLfs();
+  lfs_dir_t dir;
+  uint16_t deletedCount = 0;
+
+  if (lfs_dir_open(lfs, &dir, "/") == LFS_ERR_OK) {
+    lfs_info info;
+    while (lfs_dir_read(lfs, &dir, &info) > 0) {
+      if (info.type == LFS_TYPE_REG) {
+        uint16_t idx = 0;
+        if (sscanf(info.name, "log_%03hu.bin", &idx) == 1 || strcmp(info.name, "log.bin") == 0) {
+          char path[LFS_NAME_MAX + 2];
+          snprintf(path, sizeof(path), "/%s", info.name);
+          if (lfs_remove(lfs, path) == LFS_ERR_OK) {
+            deletedCount++;
+          }
+        }
+      }
+    }
+    lfs_dir_close(lfs, &dir);
+  }
+
+  _rowsSinceRaw = 0;
+  _rdesInitialized = false;
+  _disabled = false;
+  return deletedCount;
 }
 
 bool AimFlightRecorder::startDumpFile(Stream* stream, const char* boardName, const char* path) {

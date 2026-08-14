@@ -56,8 +56,9 @@ High-reliability flash telemetry recording, LittleFS storage management, and ser
 ### Flash Menu Commands (`DBG > FLS`)
 - **`1` (Info)**: Prints ready status, total capacity, and used bytes.
 - **`2` (Dump)**: Streams binary dump of latest log file over serial. Mutes `LOG_*` printing to prevent byte corruption.
-- **`3` (Erase)**: Enters confirmation menu (`1` confirms erase/format).
+- **`3` (Erase)**: Full LittleFS filesystem format (`lfs_format`). Use for factory wipes or corrupt storage recovery (`1` confirms).
 - **`4` (List)**: Lists all stored flight log files and sizes.
+- **`5` (Clear Logs)**: Fast file-level deletion of `/log_*.bin` via `lfs_remove()`. Preserves non-log configuration & calibration files without re-formatting sectors.
 - **`i` (Index)**: Expects raw index byte `N` to stream specific log `/flight/log_00N.bin`.
 
 ### Telemetry Gating
