@@ -77,8 +77,14 @@ bool AimNetwork::send(aim::Msg& m) {
   const bool sent = _hw->transmit(frame);
   if (sent) {
     _lastTxMs = millis();  // local clock on purpose — synced time steps
-    if ((m.cls == aim::Class::Event) && (m.subject == aim::subject::TelemetryMode)) {
-      aim::setHighDataRate(m.b[0] == 1U);
+    if (m.cls == aim::Class::Event) {
+      if (m.subject == aim::subject::TelemetryMode) {
+        aim::setHighDataRate(m.b[0] == 1U);
+      } else if (m.subject == aim::subject::LaunchDetect) {
+        aim::setHighDataRate(true);
+      } else if (m.subject == aim::subject::LowPower && m.b[0] == 1U) {
+        aim::setHighDataRate(false);
+      }
     }
   } else {
     LOG_ERROR("AimNetwork send failed: CAN transmit returned false");
@@ -111,8 +117,14 @@ bool AimNetwork::receive(aim::Msg& m) {
     _lastSyncTimeMs = remoteTimeMs;
     m.timestampMs = remoteTimeMs;
   } else {
-    if ((m.cls == aim::Class::Event) && (m.subject == aim::subject::TelemetryMode)) {
-      aim::setHighDataRate(m.b[0] == 1U);
+    if (m.cls == aim::Class::Event) {
+      if (m.subject == aim::subject::TelemetryMode) {
+        aim::setHighDataRate(m.b[0] == 1U);
+      } else if (m.subject == aim::subject::LaunchDetect) {
+        aim::setHighDataRate(true);
+      } else if (m.subject == aim::subject::LowPower && m.b[0] == 1U) {
+        aim::setHighDataRate(false);
+      }
     }
 
     if (aim::isZeroTimestamp(m.cls, m.subject)) {
