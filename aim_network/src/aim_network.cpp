@@ -8,6 +8,14 @@
 
 #include "aim_safety.h"
 #include <logger.h>
+#include "aim_job.h"
+
+namespace aim {
+  static bool g_isHighDataRate = false;
+
+  bool isHighDataRate() { return g_isHighDataRate; }
+  void setHighDataRate(bool active) { g_isHighDataRate = active; }
+}
 
 AimNetwork::AimNetwork(AimCanHardware* hardware, aim::Source self)
     : _hw(hardware),
@@ -69,6 +77,9 @@ bool AimNetwork::send(aim::Msg& m) {
   const bool sent = _hw->transmit(frame);
   if (sent) {
     _lastTxMs = millis();  // local clock on purpose — synced time steps
+    if ((m.cls == aim::Class::Event) && (m.subject == aim::subject::TelemetryMode)) {
+      aim::setHighDataRate(m.b[0] == 1U);
+    }
   } else {
     LOG_ERROR("AimNetwork send failed: CAN transmit returned false");
   }
@@ -99,13 +110,19 @@ bool AimNetwork::receive(aim::Msg& m) {
     syncTime(remoteTimeMs);
     _lastSyncTimeMs = remoteTimeMs;
     m.timestampMs = remoteTimeMs;
-  } else if (aim::isZeroTimestamp(m.cls, m.subject)) {
-    m.timestampMs = syncedMillis();
   } else {
-    if (_lastSyncTimeMs == 0xFFFFFFFFU) {
-      m.timestampMs = 0U;
+    if ((m.cls == aim::Class::Event) && (m.subject == aim::subject::TelemetryMode)) {
+      aim::setHighDataRate(m.b[0] == 1U);
+    }
+
+    if (aim::isZeroTimestamp(m.cls, m.subject)) {
+      m.timestampMs = syncedMillis();
     } else {
-      m.timestampMs = _lastSyncTimeMs + m.offsetMs;
+      if (_lastSyncTimeMs == 0xFFFFFFFFU) {
+        m.timestampMs = 0U;
+      } else {
+        m.timestampMs = _lastSyncTimeMs + m.offsetMs;
+      }
     }
   }
 
@@ -135,4 +152,8 @@ void AimNetwork::syncTime(uint32_t remoteMillis) {
 
 uint32_t AimNetwork::syncedMillis() const {
   return millis() + _timeOffset;
+}
+
+void AimNetwork::setHighDataRate(bool active) {
+  aim::setHighDataRate(active);
 }
