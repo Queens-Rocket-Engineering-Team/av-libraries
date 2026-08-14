@@ -145,7 +145,7 @@ class SpiNorFlashDriver : public AimBlockDevice {
   SPIClass& _spi;
   uint32_t  _sectors;
 
-  void _select()   { _spi.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0)); digitalWrite(_cs, LOW); }
+  void _select()   { _spi.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0)); digitalWrite(_cs, LOW); }
   void _deselect() { digitalWrite(_cs, HIGH); _spi.endTransaction(); }
 
   void _addr(uint32_t a) {
