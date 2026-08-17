@@ -1,14 +1,13 @@
-// AIM Network v0.6.x minimal example — STM32 publisher + time master.
+// AIM Network v0.7.0 minimal example — STM32 publisher + time master.
 // Sends a fake altitude ramp at 10 Hz and a TIME sync at 1 Hz, heartbeats via
 // service(), and logs heartbeats received from other nodes.
 
-#include <aim_can_driver.h>
 #include <aim_network.h>
 #include <aim_job.h>
 #include <logger.h>
 
 static constexpr uint32_t kSerialBaud = 115200U;
-static constexpr uint32_t kCanBaud = 500000U;
+static constexpr uint32_t kCanBaud = 1000000U;
 
 static aim::Job g_tick100{100U, 0U};
 static aim::Job g_tick1000{1000U, 0U};
@@ -16,7 +15,7 @@ static aim::Job g_tick1000{1000U, 0U};
 static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
 
 static Logger g_log(Serial, static_cast<uint8_t>(aim::Source::Ucm), LogLevel::INFO);
-static AimCanDriver g_canHw(kCanBaud, CAN1);
+static AimCanHardware g_canHw(kCanBaud, CAN1);
 static AimNetwork g_aim(&g_canHw, aim::Source::Ucm);
 
 void setup(void) {
@@ -68,7 +67,7 @@ void loop(void) {
     aim::Msg m = {};
     m.cls = aim::Class::Time;
     m.subject = aim::subject::TimeSync;
-    // Timestamp field IS the payload; b[0] flags bit0=0 (not GPS-disciplined).
+    // Broadcast clock synchronization baseline
     if (!g_aim.send(m)) {
       LOG_ERROR("Time TX failed");
     }

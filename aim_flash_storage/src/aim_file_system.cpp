@@ -5,8 +5,6 @@
 AimFileSystem::AimFileSystem(AimBlockDevice* device)
     : _device(device),
       _mounted(false) {
-  
-  // Configure lfs_config
   memset(&_lfs_cfg, 0, sizeof(_lfs_cfg));
   _lfs_cfg.context = this;
   _lfs_cfg.read = &AimFileSystem::lfs_read;
@@ -29,13 +27,12 @@ bool AimFileSystem::begin() {
 
   fillGeometry();
 
-  // Validate geometry before calling into littlefs to avoid assertions
+  // Validate geometry before calling into LittleFS to avoid assertion failures
   if (!_isGeometryValid()) {
     LOG_ERROR("Flash geometry invalid (read=%u, blocks=%u)", _lfs_cfg.read_size, _lfs_cfg.block_count);
     return false;
   }
 
-  // Try mounting
   int err = lfs_mount(&_lfs, &_lfs_cfg);
   if (err) {
     LOG_WARN("Flash mount failed (err=%d), attempting format", err);
@@ -122,7 +119,7 @@ bool AimFileSystem::format() {
   return true;
 }
 
-// littlefs static wrappers
+// LittleFS static C-to-C++ context wrappers
 int AimFileSystem::lfs_read(const struct lfs_config* c, lfs_block_t block, lfs_off_t off, void* buffer, lfs_size_t size) {
   return static_cast<AimFileSystem*>(c->context)->_device->read(c, block, off, buffer, size);
 }

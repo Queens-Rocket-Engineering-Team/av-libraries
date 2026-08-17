@@ -12,29 +12,29 @@ namespace aim {
 
 // Wire schema version, carried in every HEARTBEAT frame. Independent of the
 // library semver in library.json — do not merge them.
-static constexpr uint8_t kSchemaVersion = 2U;
+static constexpr uint8_t kSchemaVersion = 3U;
 
 // --- CAN ID fields (29-bit extended ID) ---
-// | 28:27 prio | 26:23 class | 22:15 subject | 14:11 source | 10:0 reserved=0 |
+// | 28:25 class | 24:17 subject | 16:13 source | 12:0 reserved=0 |
 
 enum class Class : uint8_t {
-  Cmd       = 0x0,  // UCM → LCM only
-  Ack       = 0x1,  // LCM → UCM only
-  State     = 0x2,  // valve owner → all
-  Sensor    = 0x3,  // owner → all
-  Time      = 0x4,  // time master → all
-  Heartbeat = 0x5,  // each node → all
-  Event     = 0x6,  // owner → all
-  Debug     = 0x7,  // any; never parsed by flight logic
+  Event     = 0x0,  // Highest priority (SafeStateEntered clears the bus immediately)
+  Time      = 0x1,  // High priority to minimize clock synchronization jitter/error
+  Cmd       = 0x2,
+  Ack       = 0x3,
+  State     = 0x4,
+  Sensor    = 0x5,
+  Heartbeat = 0x6,
+  Debug     = 0x7,  // Lowest priority
 };
 
 enum class Source : uint8_t {
   // 0x0 deliberately invalid: an all-zero ID field is a wiring-fault symptom.
-  Comms     = 0x1,
-  Ucm       = 0x2,
-  Lcm       = 0x3,
-  Altimeter = 0x4,
-  Gps       = 0x5,
+  Ucm       = 0x1,
+  Lcm       = 0x2,
+  Altimeter = 0x3,
+  Gps       = 0x4,
+  Comms     = 0x5,
   Power     = 0x6,
   // 0x7–0xE spare (test rig, debug dongle, future boards)
 };
@@ -42,69 +42,44 @@ enum class Source : uint8_t {
 namespace subject {
 // Valves (shared across CMD / ACK / STATE)
 static constexpr uint8_t Heartbeat = 0x00;
-static constexpr uint8_t Av204     = 0x01;  // UCM, Vent valve
-static constexpr uint8_t AvSpare   = 0x02;  // UCM, Ground side valve now DON'T ENERGIZE
-static constexpr uint8_t Av203     = 0x03;  // LCM, CAN-commanded
-static constexpr uint8_t Av205     = 0x04;  // LCM, CAN-commanded
+static constexpr uint8_t Av203     = 0x01;  // LCM, CAN-commanded
+static constexpr uint8_t Av205     = 0x02;  // LCM, CAN-commanded
+static constexpr uint8_t Av204     = 0x03;  // UCM, Vent valve
 // Power FETs
 static constexpr uint8_t PwrPtUcm  = 0x05;
 static constexpr uint8_t PwrSolLcm = 0x06;
 static constexpr uint8_t PwrPtLcm  = 0x07;
-// Sensors (value = i32, scaling fixed here)
-static constexpr uint8_t Pt202        = 0x10;  // UCM, PSI x100
-static constexpr uint8_t PtSpare1     = 0x11;  // UCM, PSI x100, no longer needed
-static constexpr uint8_t Pt204        = 0x12;  // LCM, PSI x100
-static constexpr uint8_t PtSpare2     = 0x13;  // LCM, PSI x100, no longer needed
-static constexpr uint8_t TcLowerValve = 0x18;  // LCM, Celsius x100
-static constexpr uint8_t Volt24Ucm    = 0x20;  // mV
-static constexpr uint8_t VoltSolLcm   = 0x21;  // mV
-static constexpr uint8_t BattVolt     = 0x28;  // mV
-static constexpr uint8_t GpsLat       = 0x30;  // degrees x10^7
-static constexpr uint8_t GpsLon       = 0x31;  // degrees x10^7
-static constexpr uint8_t GpsNumSats   = 0x32;  // count
-static constexpr uint8_t Altitude     = 0x38;  // meters x100
+// Sensors (wire value = i32 fixed-point)
+static constexpr uint8_t Pt204        = 0x10;  // LCM, PSI (x100)
+static constexpr uint8_t Pt202        = 0x11;  // UCM, PSI (x100)
+static constexpr uint8_t Acceleration = 0x12;  // Altimeter, 3-axis magnitude in mm/s² (= m/s² × 1000; 1G = 9810)
+static constexpr uint8_t PtSpare1     = 0x13;  // UCM, spare ADC channel, PSI (x100)
+static constexpr uint8_t PtSpare2     = 0x14;  // LCM, spare ADC channel, PSI (x100)
+static constexpr uint8_t TcLowerValve = 0x15;  // LCM, Celsius (x100)
+static constexpr uint8_t Altitude     = 0x18;  // meters (x100)
+static constexpr uint8_t GpsPosition  = 0x19;  // lon: b[0..3], lat: b[4..7] (1e-7 deg)
+static constexpr uint8_t BattVolt     = 0x20;  // mV
+static constexpr uint8_t GpsNumSats   = 0x21;  // count
+static constexpr uint8_t Volt24Ucm    = 0x32;  // mV
+static constexpr uint8_t VoltSolLcm   = 0x33;  // mV
 // Events
-static constexpr uint8_t LowPower         = 0x40;  // detail: 0=exit 1=enter
-static constexpr uint8_t LaunchDetect     = 0x41;  // detail: 1=detected
-static constexpr uint8_t SafeStateEntered = 0x42;  // detail: reason code
+static constexpr uint8_t LowPower          = 0x40;  // detail: 0=exit 1=enter
+static constexpr uint8_t LaunchDetect      = 0x41;  // detail: 1=detected
+static constexpr uint8_t GroundPowerStatus = 0x42;  // detail: 1=conected
+static constexpr uint8_t SafeStateEntered  = 0x43;  // detail: reason code
+static constexpr uint8_t TelemetryMode     = 0x44;  // detail: 0=Idle (1 Hz), 1=Active (100 Hz)
 // Time
 static constexpr uint8_t TimeSync = 0x50;
 }  // namespace subject
 
-// Priority is fixed per message definition — never chosen by callers.
-// 0 = safety/control, 1 = coordination, 2 = fast telemetry, 3 = background.
-static inline uint8_t priorityFor(Class cls, uint8_t subj) {
-  switch (cls) {
-    case Class::Cmd:
-    case Class::Ack:
-      return 0U;
-    case Class::Event:
-      return (subj == subject::SafeStateEntered) ? 0U : 3U;
-    case Class::Time:
-    case Class::State:
-      return 1U;
-    case Class::Sensor:
-      // INFO: higher priority for LCM sensors
-      return (subj >= subject::Pt204) ? 2U : 3U;
-    default:
-      return 3U;
-  }
-}
+// --- Payload enums ---
 
-// --- Payload enums (bytes 4–7, layouts per class in the protocol doc) ---
-
-enum class ControlState : uint8_t {
-  Closed  = 0,
-  Open    = 1,
-  Unknown = 2,  // controls without feedback/sensing report Unknown
-  Fault   = 3,
-};
-
-enum class AckResult : uint8_t {
-  Accepted            = 0,
-  RejectSafeState     = 1,
-  RejectBadSubject    = 2,
-  RejectBadStateValue = 3,
+enum class FlightPhase : uint8_t {
+  Preflight = 0,
+  Boost     = 1,
+  Coast     = 2,
+  Decent    = 3,
+  Landed    = 4,
 };
 
 enum class NodeState : uint8_t {
@@ -113,6 +88,14 @@ enum class NodeState : uint8_t {
   SafeState = 2,
   Fault     = 3,
 };
+
+static inline constexpr uint16_t classBit(Class cls) {
+  return static_cast<uint16_t>(1U << static_cast<uint8_t>(cls));
+}
+
+static inline constexpr bool isZeroTimestamp(Class cls, uint8_t subject) {
+  return (cls == Class::Cmd) || (cls == Class::Ack) || (cls == Class::Sensor && subject == subject::GpsPosition);
+}
 
 }  // namespace aim
 
