@@ -138,7 +138,7 @@ class SpiNorFlashDriver : public AimBlockDevice {
   lfs_size_t block_count()    const override { return _sectors; }
   int32_t    block_cycles()   const override { return 100000; }
   lfs_size_t cache_size()     const override { return kPageSize; }
-  lfs_size_t lookahead_size() const override { return 32; }
+  lfs_size_t lookahead_size() const override { return 512; }
 
  private:
   uint8_t   _cs;

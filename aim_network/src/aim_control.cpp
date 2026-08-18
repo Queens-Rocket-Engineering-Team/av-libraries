@@ -8,7 +8,9 @@ namespace aim {
 // de-energized rest. De-energized (LOW) is always the safe boot position.
 static void localActuate(Control& c, bool open) {
   const bool energize = (open != c.defaultOpen);
-  digitalWrite(c.pin, energize ? HIGH : LOW);
+  if (c.pin != kPinNone) {
+    digitalWrite(c.pin, energize ? HIGH : LOW);
+  }
   c.energized = energize;
   c.state     = open;
 }
@@ -23,7 +25,9 @@ void controlInitLocal(Control& c, const char* name, uint8_t subject, uint8_t pin
   c.confirmed   = true;
   c.hall        = ControlState::Unknown; // Hall defaults to Unknown
 
-  pinMode(pin, OUTPUT);
+  if (pin != kPinNone) {
+    pinMode(pin, OUTPUT);
+  }
   localActuate(c, c.defaultOpen);  // boot de-energized = safe
 }
 

@@ -74,7 +74,7 @@ int aimConsoleWaitRead(Stream& out) {
   if (s_serial == nullptr) { return -1; }
   const uint32_t start = millis();
   while (s_serial->available() == 0) {
-    if (static_cast<uint32_t>(millis() - start) > 5000U) { return -1; }
+    if (static_cast<uint32_t>(millis() - start) > 1000U) { return -1; }
   }
   return s_serial->read();
 }

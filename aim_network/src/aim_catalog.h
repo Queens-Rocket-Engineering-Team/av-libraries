@@ -45,6 +45,7 @@ static constexpr uint8_t Heartbeat = 0x00;
 static constexpr uint8_t Av203     = 0x01;  // LCM, CAN-commanded
 static constexpr uint8_t Av205     = 0x02;  // LCM, CAN-commanded
 static constexpr uint8_t Av204     = 0x03;  // UCM, Vent valve
+static constexpr uint8_t AvSpare   = 0x08;  // UCM, second solenoid channel (SOL2)
 // Power FETs
 static constexpr uint8_t PwrPtUcm  = 0x05;
 static constexpr uint8_t PwrSolLcm = 0x06;

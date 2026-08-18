@@ -153,9 +153,6 @@ public:
   // Disciplines the local clock offset relative to remote master time (ms).
   void syncTime(uint32_t remoteMillis);
 
-  bool isHighDataRate() const { return aim::isHighDataRate(); }
-  void setHighDataRate(bool active);
-
 private:
   AimCanHardware* _hw;
   aim::Source _self;

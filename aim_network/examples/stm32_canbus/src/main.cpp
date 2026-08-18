@@ -9,8 +9,8 @@
 static constexpr uint32_t kSerialBaud = 115200U;
 static constexpr uint32_t kCanBaud = 1000000U;
 
-static aim::Job g_tick100{100U, 0U};
-static aim::Job g_tick1000{1000U, 0U};
+static aim::Job g_tick100{100U};
+static aim::Job g_tick1000{1000U};
 
 static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
 

@@ -5,17 +5,19 @@
 #include <algorithm>
 
 AimFlightRecorder::AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
-                                     uint32_t maxLogSize, const char* const* headers)
+                                     uint32_t maxLogSize, const char* const* headers,
+                                     uint32_t syncIntervalMs)
     : _fs(fs),
       _headers(headers),
       _numCols(numCols > MAX_COLUMNS ? MAX_COLUMNS : numCols),
       _originRefreshInt(originRefreshInt),
       _maxLogSize(maxLogSize),
+      _syncIntervalMs(syncIntervalMs),
       _rowsSinceRaw(0),
+      _lastSyncMs(0),
       _rdesInitialized(false),
       _disabled(false),
       _logFileOpen(false),
-      _syncCounter(0),
       _dumping(false),
       _dumpStream(nullptr),
       _dumpNumBlocks(0),
@@ -40,6 +42,7 @@ bool AimFlightRecorder::begin() {
   lfs_dir_t dir;
   uint16_t maxIdx = 0;
 
+  const uint32_t t0 = millis();
   if (lfs_dir_open(lfs, &dir, "/") == LFS_ERR_OK) {
     lfs_info info;
     while (lfs_dir_read(lfs, &dir, &info) > 0) {
@@ -54,6 +57,23 @@ bool AimFlightRecorder::begin() {
   }
   const uint16_t activeLogIndex = maxIdx + 1;
   snprintf(_activeLogPath, sizeof(_activeLogPath), "/log_%03u.bin", activeLogIndex);
+
+  const uint32_t t1 = millis();
+  if (!_logFileOpen) {
+    if (lfs_file_open(lfs, &_logFile, _activeLogPath,
+                      LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND) != LFS_ERR_OK) {
+      LOG_ERROR("AimFlightRecorder: file open failed (%s)", _activeLogPath);
+      _disabled = true;
+      return false;
+    }
+    _logFileOpen = true;
+  }
+  const uint32_t t2 = millis();
+  LOG_INFO("FlightRecorder ready: %s (scan=%lums open=%lums sync=%lums)",
+           _activeLogPath,
+           static_cast<unsigned long>(t1 - t0),
+           static_cast<unsigned long>(t2 - t1),
+           static_cast<unsigned long>(_syncIntervalMs));
 
   return true;
 }
@@ -76,7 +96,7 @@ bool AimFlightRecorder::closeLog() {
 
   const int err = lfs_file_close(_fs.getLfs(), &_logFile);
   _logFileOpen = false;
-  _syncCounter = 0;
+  _lastSyncMs = 0;
   _rowsSinceRaw = 0;
   _rdesInitialized = false;  // next writeRow() emits a raw origin row
   return err == LFS_ERR_OK;
@@ -87,63 +107,43 @@ bool AimFlightRecorder::syncLog() {
   return lfs_file_sync(_fs.getLfs(), &_logFile) == LFS_ERR_OK;
 }
 
-
-
-bool AimFlightRecorder::writeRow(uint32_t rowData[]) {
-  if (_disabled) return false;
+bool AimFlightRecorder::writeRow(const uint32_t* rowData, uint32_t nowMs) {
+  if (_disabled || !_logFileOpen || !rowData || _numCols == 0) return false;
 #ifndef FLIGHT_BUILD
   // Silently mute writes during interactive console sessions without reporting false I/O failures
   if (aimConsoleIsActive()) return true;
 #endif
-  if (!_fs.isReady() || !rowData || _numCols == 0) return false;
+  if (!_fs.isReady()) return false;
 
   lfs_t* lfs = _fs.getLfs();
 
-  if (!_logFileOpen) {
-    if (lfs_file_open(lfs, &_logFile, _activeLogPath,
-                      LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND) != LFS_ERR_OK) {
-      return false;
-    }
-    _logFileOpen = true;
-  }
-
-  // Enforce storage boundary cap. If _maxLogSize is 0 (unspecified), reserve a mandatory
-  // 64 KB headroom margin so LittleFS can update directory metadata, superblocks, and
-  // lookahead buffers without hitting underlying NOR flash allocation errors.
-  const lfs_soff_t fileSize = lfs_file_size(lfs, &_logFile);
-  uint32_t effectiveMax = _maxLogSize;
-  if (effectiveMax == 0) {
-    effectiveMax = _fs.getTotalSize() > 65536U ? _fs.getTotalSize() - 65536U : 0;
-  }
-  if (fileSize > 0 && static_cast<uint32_t>(fileSize) > effectiveMax) {
+  // Enforce per-file storage boundary cap if explicitly set
+  if (_maxLogSize > 0U && static_cast<uint32_t>(lfs_file_size(lfs, &_logFile)) >= _maxLogSize) {
     _disabled = true;
-    if (_logFileOpen) {
-      lfs_file_close(lfs, &_logFile); 
-      _logFileOpen = false; 
-    }
-
-    LOG_ERROR("Flight recorder disabled: storage full (%u bytes)", static_cast<unsigned int>(fileSize));
-    return false; 
+    closeLog();
+    LOG_WARN("Flight recorder: max log size (%u bytes) reached", static_cast<unsigned>(_maxLogSize));
+    return false;
   }
 
   uint8_t buffer[80];  // 5 bytes × 16 cols max
   size_t ptr = _encodeRow(buffer, rowData);
 
-  // Write compressed row to LittleFS file.
+  // Write compressed row to LittleFS RAM cache buffer.
   lfs_ssize_t written = lfs_file_write(lfs, &_logFile, buffer, ptr);
   if (written != static_cast<lfs_ssize_t>(ptr)) {
-    if (_logFileOpen) {
-      lfs_file_close(lfs, &_logFile);
-      _logFileOpen = false;
-    }
+    closeLog();
     _disabled = true;
-    LOG_ERROR("Flight recorder disabled: storage full/unwritable");
+    LOG_ERROR("Flight recorder disabled: write error (%d)", static_cast<int>(written));
     return false;
   }
 
-  if (++_syncCounter >= 16) {
-    lfs_file_sync(lfs, &_logFile);
-    _syncCounter = 0;
+  // Bounded time-based sync
+  if (_syncIntervalMs > 0U) {
+    const uint32_t curMs = (nowMs != 0U) ? nowMs : millis();
+    if (static_cast<uint32_t>(curMs - _lastSyncMs) >= _syncIntervalMs) {
+      lfs_file_sync(lfs, &_logFile);
+      _lastSyncMs = curMs;
+    }
   }
 
   return true;

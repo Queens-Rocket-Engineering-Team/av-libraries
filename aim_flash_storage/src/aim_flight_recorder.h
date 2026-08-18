@@ -17,18 +17,21 @@ class AimFlightRecorder {
   static constexpr char    kDumpCmdResend   = 'L';  // host: resend last block
   static constexpr uint8_t kHandshakeName   = 32U;  // boardName field width in handshake
   static constexpr uint8_t kHandshakeHeader = 32U;  // per-header field width in handshake
-  static constexpr uint16_t kDumpBlockSize  = 512U; // dump block/chunk size on the wire
+  static constexpr uint16_t kDumpBlockSize      = 512U; // dump block/chunk size on the wire
+  static constexpr uint32_t kDefaultSyncInterval = 1000U; // default sync interval in milliseconds (1s)
 
   // Headers: pointer to column schema mapping of supported data types to column names.
   AimFlightRecorder(AimFileSystem& fs, uint8_t numCols, uint16_t originRefreshInt,
-                    uint32_t maxLogSize = 0, const char* const* headers = nullptr);
+                    uint32_t maxLogSize = 0, const char* const* headers = nullptr,
+                    uint32_t syncIntervalMs = kDefaultSyncInterval);
   ~AimFlightRecorder();
 
   // Initializes the flight recorder and locates active log file. Must be called after AimFileSystem::begin().
   bool begin();
 
   // Writes a compressed row of telemetry to flash. Bounded LFS metadata cost (<< 2s watchdog).
-  bool writeRow(uint32_t rowData[]);
+  // Optional nowMs timestamp avoids redundant hardware timer reads. Defaults to 0 (calls millis()).
+  bool writeRow(const uint32_t* rowData, uint32_t nowMs = 0);
 
   // Forces an immediate sync of the current log file to flash.
   bool syncLog();
@@ -77,7 +80,9 @@ class AimFlightRecorder {
   uint8_t  _numCols;
   uint16_t _originRefreshInt;
   uint32_t _maxLogSize;
+  uint32_t _syncIntervalMs;
   uint16_t _rowsSinceRaw;
+  uint32_t _lastSyncMs;
   uint32_t _lastVals[MAX_COLUMNS];
   bool     _rdesInitialized;
   bool     _disabled;
@@ -85,7 +90,6 @@ class AimFlightRecorder {
   // Logging state
   lfs_file_t _logFile;
   bool       _logFileOpen;
-  uint8_t    _syncCounter;
 
   // Dump state
   bool        _dumping;

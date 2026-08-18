@@ -10,13 +10,6 @@
 #include <logger.h>
 #include "aim_job.h"
 
-namespace aim {
-  static bool g_isHighDataRate = false;
-
-  bool isHighDataRate() { return g_isHighDataRate; }
-  void setHighDataRate(bool active) { g_isHighDataRate = active; }
-}
-
 AimNetwork::AimNetwork(AimCanHardware* hardware, aim::Source self)
     : _hw(hardware),
       _self(self),
@@ -77,17 +70,11 @@ bool AimNetwork::send(aim::Msg& m) {
   const bool sent = _hw->transmit(frame);
   if (sent) {
     _lastTxMs = millis();  // local clock on purpose — synced time steps
-    if (m.cls == aim::Class::Event) {
-      if (m.subject == aim::subject::TelemetryMode) {
-        aim::setHighDataRate(m.b[0] == 1U);
-      } else if (m.subject == aim::subject::LaunchDetect) {
-        aim::setHighDataRate(true);
-      } else if (m.subject == aim::subject::LowPower && m.b[0] == 1U) {
-        aim::setHighDataRate(false);
-      }
-    }
   } else {
-    LOG_ERROR("AimNetwork send failed: CAN transmit returned false");
+    LOG_ERROR("AimNetwork send failed: CAN transmit returned false (cls=%u subj=0x%02X src=%u)",
+              static_cast<unsigned>(m.cls),
+              static_cast<unsigned>(m.subject),
+              static_cast<unsigned>(m.source));
   }
 
   return sent;
@@ -117,16 +104,6 @@ bool AimNetwork::receive(aim::Msg& m) {
     _lastSyncTimeMs = remoteTimeMs;
     m.timestampMs = remoteTimeMs;
   } else {
-    if (m.cls == aim::Class::Event) {
-      if (m.subject == aim::subject::TelemetryMode) {
-        aim::setHighDataRate(m.b[0] == 1U);
-      } else if (m.subject == aim::subject::LaunchDetect) {
-        aim::setHighDataRate(true);
-      } else if (m.subject == aim::subject::LowPower && m.b[0] == 1U) {
-        aim::setHighDataRate(false);
-      }
-    }
-
     if (aim::isZeroTimestamp(m.cls, m.subject)) {
       m.timestampMs = syncedMillis();
     } else {
@@ -164,8 +141,4 @@ void AimNetwork::syncTime(uint32_t remoteMillis) {
 
 uint32_t AimNetwork::syncedMillis() const {
   return millis() + _timeOffset;
-}
-
-void AimNetwork::setHighDataRate(bool active) {
-  aim::setHighDataRate(active);
 }
