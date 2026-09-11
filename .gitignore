@@ -2,8 +2,18 @@
 *.tmp
 
 # extract_tool output (timestamped telemetry dumps)
-aim_flash_storage/extract_tool/*.csv
+*.csv
 
-#vscode config
-*.vscode__pycache__/
+# python build & shared lib artifacts
+__pycache__/
 *.pyc
+*.dll
+*.so
+*.dylib
+
+# vscode config
+*.vscode
+
+# Local build / LSP artifacts
+compile_commands.json
+.clangd

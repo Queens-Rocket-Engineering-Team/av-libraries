@@ -29,6 +29,7 @@ struct Sensor {
   const char* name    = "";      // human label for console + telemetry
   uint8_t     subject = 0U;      // aim::subject:: id matched on Sensor frames
   int32_t     value   = 0;       // last value, catalog-scaled wire integer
+  uint32_t    timestamp = 0; 
   float       toEng   = 1.0f;    // value * toEng = engineering units
   const char* unit    = "";      // engineering unit label (console display)
   bool        fresh   = false;   // a value is known (Local: sampled, Remote: received)

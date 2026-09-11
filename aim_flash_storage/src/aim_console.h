@@ -62,6 +62,10 @@ void aimConsoleService(void);
  */
 int aimConsoleWaitRead(Stream& out);
 
+#else
+
+inline bool aimConsoleIsActive(void) { return false; }
+
 #endif // FLIGHT_BUILD
 
 #endif // AIM_CONSOLE_H

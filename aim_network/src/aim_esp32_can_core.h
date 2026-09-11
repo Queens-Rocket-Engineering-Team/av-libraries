@@ -3,29 +3,25 @@
 
 #if defined(ARDUINO_ARCH_ESP32)
 
-#include "aim_network.h"
-#include "aim_safety.h"
-
 #include "aim_can_frame.h"
+
 #include <driver/twai.h>
 #include <cstdint>
 
 class AimEsp32CanCore {
 public:
-  using Frame = aim::Frame;
-
   struct Stats {
-    uint32_t txFrames;
-    uint32_t rxFrames;
-    uint32_t txErrors;
-    uint32_t rxErrors;
-    uint32_t filteredFrames;
-    uint32_t beginErrors;
-    uint32_t busOffRecoveries;
-    uint32_t lastError;
-    uint32_t lastBusErrCount;
-    uint32_t lastTec;
-    uint32_t lastRec;
+    uint32_t txFrames{0U};
+    uint32_t rxFrames{0U};
+    uint32_t txErrors{0U};
+    uint32_t rxErrors{0U};
+    uint32_t filteredFrames{0U};
+    uint32_t beginErrors{0U};
+    uint32_t busOffRecoveries{0U};
+    uint32_t lastError{0U};
+    uint32_t lastBusErrCount{0U};
+    uint32_t lastTec{0U};
+    uint32_t lastRec{0U};
   };
 
   AimEsp32CanCore(uint32_t baud, int rxPin, int txPin);
@@ -35,8 +31,8 @@ public:
   bool setClassMask(uint16_t mask);
 
   bool begin();
-  bool transmit(const Frame& frame);
-  bool receive(Frame& frame);
+  bool transmit(const aim::Frame& frame);
+  bool receive(aim::Frame& frame);
 
   void getStats(Stats& stats) const;
   void clearStats();

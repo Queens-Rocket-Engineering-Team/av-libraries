@@ -30,6 +30,20 @@
 
 namespace aim {
 
+enum class ControlState : uint8_t {
+  Closed  = 0,
+  Open    = 1,
+  Unknown = 2,  // controls without feedback/sensing report Unknown
+  Fault   = 3,
+};
+
+enum class AckResult : uint8_t {
+  Accepted            = 0,
+  RejectSafeState     = 1,
+  RejectBadSubject    = 2,
+  RejectBadStateValue = 3,
+};
+
 enum class ControlKind : uint8_t { Local, Remote };
 
 // Resend an un-Acked Cmd after this window (Remote controls only).

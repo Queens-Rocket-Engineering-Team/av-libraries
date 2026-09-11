@@ -1,4 +1,5 @@
 #include "aim_stm32_can_core.h"
+#include "aim_network.h"
 
 #if defined(ARDUINO_ARCH_STM32)
 
@@ -148,19 +149,15 @@ bool configureF1CanPins(CAN_TypeDef* canbus) {
 
 AimStm32CanCore::AimStm32CanCore(uint32_t baud, CAN_TypeDef* canbus)
   : _classMask(0U),
-      _baud(baud),
-      _canbus(canbus),
-      _initialized(false),
-      _txHead(0U),
-      _txTail(0U),
-      _txCount(0U),
-      _rxHead(0U),
-      _rxTail(0U),
-      _rxCount(0U),
-      _stats{},
-      _lastErrorFlags(0U),
-      _hcan{} {
-  static_assert(sizeof(Frame::data) == 8U, "CAN frame data must be 8 bytes");
+    _baud(baud),
+    _canbus(canbus),
+    _initialized(false),
+    _txQueue(),
+    _rxQueue(),
+    _stats{},
+    _lastErrorFlags(0U),
+    _hcan{} {
+  static_assert(sizeof(aim::Frame::data) == 8U, "CAN frame data must be 8 bytes");
 }
 
 bool AimStm32CanCore::setClassMask(uint16_t mask) {
@@ -209,6 +206,39 @@ void AimStm32CanCore::clearStats() {
   _lastErrorFlags = 0U;
   AimStm32CanCore::exitCritical(primask);
 }
+
+void AimStm32CanCore::updateErrorTelemetry() {
+  if (_canbus == nullptr) {
+    return;
+  }
+
+  const uint32_t halErr = HAL_CAN_GetError(&_hcan);
+  const uint32_t esr = _canbus->ESR;
+
+  const uint32_t primask = enterCritical();
+  _stats.lastHalError = halErr;
+  _stats.lastEsr = esr;
+
+  if (esr & CAN_ESR_BOFF) {
+    if ((_lastErrorFlags & CAN_ESR_BOFF) == 0U) {
+      _stats.busOffEvents++;
+    }
+  }
+  if (esr & CAN_ESR_EWGF) {
+    if ((_lastErrorFlags & CAN_ESR_EWGF) == 0U) {
+      _stats.errorWarningEvents++;
+    }
+  }
+  if (esr & CAN_ESR_EPVF) {
+    if ((_lastErrorFlags & CAN_ESR_EPVF) == 0U) {
+      _stats.errorPassiveEvents++;
+    }
+  }
+
+  _lastErrorFlags = esr;
+  exitCritical(primask);
+}
+
 
 
 
@@ -417,108 +447,25 @@ bool AimStm32CanCore::begin() {
   return true;
 }
 
-bool AimStm32CanCore::enqueueTx(const Frame& frame) {
-  const uint32_t primask = enterCritical();
-  if (_txCount >= kTxQueueSize) {
-    _stats.txQueueDrops = _stats.txQueueDrops + 1U;
-    exitCritical(primask);
-    return false;
-  }
-
-  _txQueue[_txHead] = frame;
-  _txHead = static_cast<uint8_t>((_txHead + 1U) % kTxQueueSize);
-  _txCount = static_cast<uint8_t>(_txCount + 1U);
-  exitCritical(primask);
-  return true;
-}
-
-bool AimStm32CanCore::pushRx(const Frame& frame) {
-  const uint32_t primask = enterCritical();
-  if (_rxCount >= kRxQueueSize) {
-    _stats.rxQueueDrops = _stats.rxQueueDrops + 1U;
-    exitCritical(primask);
-    return false;
-  }
-
-  _rxQueue[_rxHead] = frame;
-  _rxHead = static_cast<uint8_t>((_rxHead + 1U) % kRxQueueSize);
-  _rxCount = static_cast<uint8_t>(_rxCount + 1U);
-  _stats.rxFrames = _stats.rxFrames + 1U;
-  exitCritical(primask);
-  return true;
-}
-
-bool AimStm32CanCore::dequeueRx(Frame& frame) {
-  const uint32_t primask = enterCritical();
-  if (_rxCount == 0U) {
-    exitCritical(primask);
-    return false;
-  }
-
-  frame = _rxQueue[_rxTail];
-  _rxTail = static_cast<uint8_t>((_rxTail + 1U) % kRxQueueSize);
-  _rxCount = static_cast<uint8_t>(_rxCount - 1U);
-  exitCritical(primask);
-  return true;
-}
-
-void AimStm32CanCore::updateErrorTelemetry() {
-  if (_hcan.Instance != nullptr) {
-    const uint32_t primask = enterCritical();
-    _stats.lastEsr = _hcan.Instance->ESR;
-    exitCritical(primask);
-  }
-
-  const uint32_t halError = HAL_CAN_GetError(&_hcan);
-  if (halError == HAL_CAN_ERROR_NONE) {
-    _lastErrorFlags = 0U;
-
-    const uint32_t primask = enterCritical();
-    _stats.lastHalError = 0U;
-    exitCritical(primask);
-    return;
-  }
-
-  const uint32_t newFlags = halError & (~_lastErrorFlags);
-  _lastErrorFlags = halError;
-
-  const uint32_t primask = enterCritical();
-  _stats.lastHalError = halError;
-#if defined(HAL_CAN_ERROR_BOF)
-  if ((newFlags & HAL_CAN_ERROR_BOF) != 0U) {
-    _stats.busOffEvents = _stats.busOffEvents + 1U;
-  }
-#endif
-#if defined(HAL_CAN_ERROR_EWG)
-  if ((newFlags & HAL_CAN_ERROR_EWG) != 0U) {
-    _stats.errorWarningEvents = _stats.errorWarningEvents + 1U;
-  }
-#endif
-#if defined(HAL_CAN_ERROR_EPV)
-  if ((newFlags & HAL_CAN_ERROR_EPV) != 0U) {
-    _stats.errorPassiveEvents = _stats.errorPassiveEvents + 1U;
-  }
-#endif
-  exitCritical(primask);
-}
-
 bool AimStm32CanCore::flushTxMailboxes() {
   uint8_t iterations = 0U;
   while (iterations < kTxQueueSize) {
+    aim::Frame frame = {};
     const uint32_t primask = enterCritical();
 
     const uint32_t freeLevel = HAL_CAN_GetTxMailboxesFreeLevel(&_hcan);
-    if ((freeLevel == 0U) || (_txCount == 0U)) {
+    if (freeLevel == 0U) {
       exitCritical(primask);
       break;
     }
 
-    Frame frame = _txQueue[_txTail];
-    _txTail = static_cast<uint8_t>((_txTail + 1U) % kTxQueueSize);
-    _txCount = static_cast<uint8_t>(_txCount - 1U);
+    if (!_txQueue.tryPop(frame)) {
+      exitCritical(primask);
+      break;
+    }
 
     if (frame.dlc != 8U) {
-      _stats.txHalErrors = _stats.txHalErrors + 1U;
+      _stats.txHalErrors++;
       exitCritical(primask);
       return false;
     }
@@ -537,15 +484,14 @@ bool AimStm32CanCore::flushTxMailboxes() {
     const HAL_StatusTypeDef status = HAL_CAN_AddTxMessage(&_hcan, &header, payload, &mailbox);
 
     if (status != HAL_OK) {
-      _stats.txHalErrors = _stats.txHalErrors + 1U;
+      _stats.txHalErrors++;
       exitCritical(primask);
       updateErrorTelemetry();
       return false;
     }
 
-    _stats.txFrames = _stats.txFrames + 1U;
+    _stats.txFrames++;
     exitCritical(primask);
-
     iterations = static_cast<uint8_t>(iterations + 1U);
   }
 
@@ -565,19 +511,21 @@ bool AimStm32CanCore::pollRx() {
     uint8_t data[8] = {};
     const HAL_StatusTypeDef status = HAL_CAN_GetRxMessage(&_hcan, CAN_RX_FIFO0, &header, data);
     if (status != HAL_OK) {
-      const uint32_t primask = enterCritical();
-      _stats.rxHalErrors = _stats.rxHalErrors + 1U;
-      exitCritical(primask);
+      _stats.rxHalErrors++;
       updateErrorTelemetry();
       return false;
     }
 
     if ((header.IDE == CAN_ID_EXT) && (header.RTR == CAN_RTR_DATA) && (header.DLC <= 8U)) {
-      Frame frame = {};
+      aim::Frame frame = {};
       frame.id = header.ExtId & aim::kExtIdMask;
       frame.dlc = static_cast<uint8_t>(header.DLC);
       (void)memcpy(frame.data, data, frame.dlc);
-      (void)pushRx(frame);
+      if (_rxQueue.push(frame)) {
+        _stats.rxFrames++;
+      } else {
+        _stats.rxQueueDrops++;
+      }
     }
 
     iterations = static_cast<uint8_t>(iterations + 1U);
@@ -587,7 +535,7 @@ bool AimStm32CanCore::pollRx() {
   return true;
 }
 
-bool AimStm32CanCore::transmit(const Frame& frame) {
+bool AimStm32CanCore::transmit(const aim::Frame& frame) {
   AIM_ASSERT(frame.dlc <= 8U);
 
   if (!_initialized) {
@@ -597,28 +545,22 @@ bool AimStm32CanCore::transmit(const Frame& frame) {
     return false;
   }
 
-  (void)flushTxMailboxes();
-
-  const bool queued = enqueueTx(frame);
-  if (!queued) {
+  if (!_txQueue.push(frame)) {
+    _stats.txQueueDrops++;
     return false;
   }
 
   return flushTxMailboxes();
 }
 
-bool AimStm32CanCore::receive(Frame& frame) {
+bool AimStm32CanCore::receive(aim::Frame& frame) {
   AIM_ASSERT(_canbus != nullptr);
 
   if (!_initialized) {
     return false;
   }
 
-  (void)pollRx();
-
-  const bool rxAvailable = dequeueRx(frame);
-  (void)flushTxMailboxes();
-  return rxAvailable;
+  return _rxQueue.tryPop(frame);
 }
 
 void AimStm32CanCore::onRxInterrupt() {

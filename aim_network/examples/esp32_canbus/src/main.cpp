@@ -1,20 +1,19 @@
-// AIM Network v0.6.x minimal example — ESP32 listener.
+// AIM Network v0.7.0 minimal example — ESP32 listener.
 // Receives sensor, time, and heartbeat frames and logs them; heartbeats itself
 // via service(). Pairs with the STM32 publisher example.
 
-#include <aim_can_driver.h>
 #include <aim_network.h>
 #include <logger.h>
 
 static constexpr uint32_t kSerialBaud = 115200U;
-static constexpr uint32_t kCanBaud = 500000U;
+static constexpr uint32_t kCanBaud = 1000000U;
 static constexpr int kCanRxPin = 2;
 static constexpr int kCanTxPin = 1;
 
 static constexpr uint8_t kMaxRxFramesPerLoop = 8U;
 
 static Logger g_log(Serial, static_cast<uint8_t>(aim::Source::Lcm), LogLevel::INFO);
-static AimCanDriver g_canHw(kCanBaud, kCanRxPin, kCanTxPin);
+static AimCanHardware g_canHw(kCanBaud, kCanRxPin, kCanTxPin);
 static AimNetwork g_aim(&g_canHw, aim::Source::Lcm);
 
 void setup(void) {

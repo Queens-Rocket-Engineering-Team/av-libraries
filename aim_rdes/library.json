@@ -1,0 +1,16 @@
+{
+  "name": "aim_rdes",
+  "version": "1.0.0",
+  "description": "Realtime Deviation Encoding Scheme (RDES) Compression",
+  "keywords": ["compression", "rdes", "telemetry"],
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "build": {
+    "srcDir": "src",
+    "flags": [
+      "-I src"
+    ]
+  }
+}

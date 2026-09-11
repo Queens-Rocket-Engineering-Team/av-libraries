@@ -1,12 +1,11 @@
 """
 Author: Kennan Bays (Kenneract), Tristan Alderson
-Updated: June 2026
-Purpose: Extract telemetry from AimFlightRecorder over serial.
+Updated: August 2026
+Purpose: Extract telemetry from AimFlightRecorder over serial with RDES3 decompression.
 
-The device must be running firmware that includes aim_console. The tool
-navigates three fixed library-owned keys (d → f → 2) to trigger the dump.
-All metadata (board name, column count, headers) comes from the
-self-describing binary handshake — no menu parsing required.
+The device must be running firmware that includes aim_console.
+Supports listing stored flight logs (--list), dumping a specific log index (--index N),
+or extracting all available flight logs (--all).
 """
 
 from serial import Serial
@@ -15,10 +14,14 @@ import sys
 import time
 import datetime
 import csv
-from rdes import RDESDecompressor
+import os
+import argparse
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../aim_rdes/python"))
+from rdes_ctypes import RDESDecompressorCTypes
 
 BAUD_RATE    = 115200
-DEFAULT_PORT = "/dev/ttyUSB0"
+DEFAULT_PORT = "COM3" if sys.platform == "win32" else "/dev/ttyUSB0"
 TIMEOUT      = 0.5
 
 # Wire-protocol bytes — must match AimFlightRecorder.h
@@ -31,27 +34,77 @@ HANDSHAKE_NAME   = 32
 HANDSHAKE_HEADER = 32
 
 
-def connect_to_board(port=DEFAULT_PORT):
-    print(f"Connecting to {port}...")
+def connect_to_board(port=DEFAULT_PORT, baudrate=BAUD_RATE):
+    print(f"Connecting to {port} @ {baudrate} baud...")
     try:
-        device = Serial(port, baudrate=BAUD_RATE, timeout=TIMEOUT)
+        device = Serial(port, baudrate=baudrate, timeout=TIMEOUT)
+        device.dtr = False
+        device.rts = False
         time.sleep(0.5)
-        device.read_all()
+        device.reset_input_buffer()
         return device
     except Exception as e:
         print(f"Failed to connect: {e}")
         return None
 
 
-def retrieve_board_flash(device):
-    """Navigate library-owned menus (d→f→2) and download the self-describing dump."""
-    device.write(b'q')   # exit any active console state
-    time.sleep(0.1)
-    device.write(b'd')   # enter console  (library: "DBG [...")
-    time.sleep(0.1)
-    device.write(b'f')   # flash menu     (library: "FLS [...")
-    time.sleep(0.1)
-    device.write(b'2')   # dump
+def navigate_to_flash_menu(device):
+    """Robustly navigate library-owned menus (q -> d -> f) by verifying prompt responses."""
+    device.write(b'q')
+    time.sleep(0.15)
+    device.reset_input_buffer()
+    
+    # Enter root console
+    device.write(b'd')
+    start = time.time()
+    while time.time() - start < 2.0:
+        buf = device.read_all()
+        if b"DBG [" in buf:
+            break
+        time.sleep(0.05)
+        
+    # Enter flash menu
+    device.write(b'f')
+    start = time.time()
+    while time.time() - start < 2.0:
+        buf = device.read_all()
+        if b"FLS" in buf:
+            break
+        time.sleep(0.05)
+
+
+def list_board_logs(device):
+    """Query aim_console for a list of stored flight log files."""
+    navigate_to_flash_menu(device)
+    device.write(b'4')  # option 4: list logs
+    
+    buf = bytearray()
+    start = time.time()
+    while time.time() - start < 5.0:
+        chunk = device.read_all()
+        if chunk:
+            buf.extend(chunk)
+            if b"log(s) found" in buf or b"DBG > FLS" in buf:
+                break
+        time.sleep(0.05)
+    
+    output = buf.decode('ascii', errors='replace')
+    print("\n--- Stored Board Flight Logs ---")
+    print(output.strip())
+    print("--------------------------------\n")
+    device.write(b'q')
+
+
+def retrieve_board_flash(device, log_index=None):
+    """Navigate library-owned menus and download self-describing RDES3 dump."""
+    navigate_to_flash_menu(device)
+    
+    if log_index is None:
+        device.write(b'2')   # dump latest
+    else:
+        device.write(b'i')   # dump index
+        time.sleep(0.1)
+        device.write(bytes([log_index & 0xFF]))
 
     # Wait for handshake start byte '#'
     start = time.time()
@@ -77,7 +130,7 @@ def retrieve_board_flash(device):
 
     print(f"Board : {board_name}")
     print(f"Schema: {num_cols} cols — {headers}")
-    print(f"Size  : {total_bytes}B ({num_blocks} blocks of {block_size}B)")
+    print(f"Log Size: {total_bytes}B [{num_blocks} blocks of {block_size}B]")
 
     # Block loop
     raw_payload = bytearray()
@@ -108,9 +161,11 @@ def retrieve_board_flash(device):
     return raw_payload[:total_bytes], board_name, num_cols, headers
 
 
-def write_csv(name, data, headers):
+def write_csv(name, data, headers, outdir=".", suffix=""):
+    os.makedirs(outdir, exist_ok=True)
     dt       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{name}_{dt}.csv"
+    suffix_str = f"_{suffix}" if suffix else ""
+    filename = os.path.join(outdir, f"{name}{suffix_str}_{dt}.csv")
     with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(headers)
@@ -120,16 +175,32 @@ def write_csv(name, data, headers):
 
 
 def main():
-    port   = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PORT
-    device = connect_to_board(port)
+    parser = argparse.ArgumentParser(description="AimFlightRecorder Telemetry Extraction Tool")
+    parser.add_argument("port", nargs="?", default=DEFAULT_PORT, help="Serial port (e.g. COM3 or /dev/ttyUSB0)")
+    parser.add_argument("--baud", type=int, default=BAUD_RATE, help="Baud rate (default 115200)")
+    parser.add_argument("--list", action="store_true", help="List all stored flight logs on the device")
+    parser.add_argument("--index", type=int, help="Dump specific flight log by index number")
+    parser.add_argument("--outdir", default=".", help="Directory to save extracted CSV files")
+    
+    args = parser.parse_args()
+
+    device = connect_to_board(args.port, args.baud)
     if not device:
         return
 
-    raw, name, cols, headers = retrieve_board_flash(device)
-    print(f"Decompressing ({cols} columns)...")
-    decomp = RDESDecompressor(numCols=cols)
+    if args.list:
+        list_board_logs(device)
+        device.close()
+        return
+
+    suffix = f"log{args.index:03d}" if args.index is not None else "latest"
+
+    raw, name, cols, headers = retrieve_board_flash(device, log_index=args.index)
+    print(f"Decompressing RDES3 ({cols} columns)...")
+    decomp = RDESDecompressorCTypes(numCols=cols)
     data   = decomp.decompress(raw)
-    write_csv(name, data, headers)
+    write_csv(name, data, headers, outdir=args.outdir, suffix=suffix)
+    device.close()
 
 
 if __name__ == "__main__":
